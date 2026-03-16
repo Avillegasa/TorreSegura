@@ -43,6 +43,10 @@ class UsuarioCreationForm(UserCreationForm):
     def __init__(self, *args, **kwargs):
         self.user_actual = kwargs.pop('user_actual', None)  # Aceptar el parámetro extra
         super().__init__(*args, **kwargs)
+        
+        # Initialize rol_obj as None to avoid UnboundLocalError
+        rol_obj = None
+        
         # Si el rol "Personal" está presente en los datos o instancia, hacer campos opcionales
         rol_data = self.data.get('rol') or (self.instance.rol.id if self.instance and self.instance.rol else None)
         try:
@@ -55,7 +59,6 @@ class UsuarioCreationForm(UserCreationForm):
                     self.fields['password2'].required = False
         except Rol.DoesNotExist:
             pass
-
 
         # Filtrar viviendas si ya hay un edificio seleccionado
         if 'edificio' in self.data:
@@ -77,14 +80,16 @@ class UsuarioCreationForm(UserCreationForm):
         if self.user_actual and hasattr(self.user_actual, 'rol'):
             if self.user_actual.rol.nombre == 'Gerente':
                 self.fields['rol'].queryset = Rol.objects.exclude(nombre='Administrador')
-        # Dentro de __init__, después de obtener rol_obj:
-        if rol_obj.nombre in ["Personal", "Vigilante", "Gerente"]:
+
+        # Check if rol_obj exists before using it - FIX for UnboundLocalError
+        if rol_obj and rol_obj.nombre in ["Personal", "Vigilante", "Gerente"]:
             campos_opcionales = [
                 'contacto_emergencia', 'telefono_emergencia', 'especialidad',
                 'puesto', 'fecha_contratacion', 'tipo_contrato', 'salario'
             ]
             for campo in campos_opcionales:
-                self.fields[campo].required = False
+                if campo in self.fields:  # Extra safety check
+                    self.fields[campo].required = False
     def clean_fecha_contratacion(self):
         fecha = self.cleaned_data.get('fecha_contratacion')
         rol = self.cleaned_data.get('rol')
@@ -101,8 +106,6 @@ class UsuarioCreationForm(UserCreationForm):
             raise forms.ValidationError("El teléfono de emergencia solo debe contener números.")
         return tel
 
-
-
     def clean_contacto_emergencia(self):
         nombre = self.cleaned_data.get('contacto_emergencia', '').strip()
         rol = self.cleaned_data.get('rol')
@@ -117,6 +120,10 @@ class UsuarioCreationForm(UserCreationForm):
         rol = cleaned_data.get('rol')
         edificio = cleaned_data.get('edificio')
         vivienda = cleaned_data.get('vivienda')
+
+        # Early return if no rol is selected
+        if not rol:
+            return cleaned_data
         # if rol and rol.nombre == 'Personal':
         #     # No validar campos que serán ignorados
         #     return cleaned_data
@@ -144,9 +151,10 @@ class UsuarioCreationForm(UserCreationForm):
         if rol and rol.nombre != 'Residente':
             cleaned_data['vivienda'] = None
 
-
         if rol and rol.nombre in ['Gerente', 'Vigilante'] and not edificio:
             self.add_error('edificio', f'Debes seleccionar un edificio para asignar al rol {rol.nombre}.')
+        
+        return cleaned_data
 
     def clean_email(self):
         email = self.cleaned_data.get('email', '').strip()
@@ -175,7 +183,6 @@ class UsuarioCreationForm(UserCreationForm):
         if len(username) > 150:
             raise forms.ValidationError("El nombre de usuario no debe tener más de 150 caracteres.")
         return username
-
 
     def clean_first_name(self):
         nombre = self.cleaned_data.get('first_name', '').strip()

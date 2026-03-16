@@ -1,12 +1,14 @@
+# financiero/forms.py - VERSIÓN CORREGIDA CON VALIDACIONES MEJORADAS
 from django import forms
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+from decimal import Decimal
 from .models import (
     ConceptoCuota, Cuota, Pago, PagoCuota, 
     CategoriaGasto, Gasto, EstadoCuenta
 )
-from viviendas.models import Vivienda, Residente
+from viviendas.models import Vivienda, Residente, Edificio
 
 class ConceptoCuotaForm(forms.ModelForm):
     class Meta:
@@ -14,15 +16,36 @@ class ConceptoCuotaForm(forms.ModelForm):
         fields = ['nombre', 'descripcion', 'monto_base', 'periodicidad', 'aplica_recargo', 'porcentaje_recargo', 'activo']
         widgets = {
             'descripcion': forms.Textarea(attrs={'rows': 3}),
+            'monto_base': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'porcentaje_recargo': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'max': '100'}),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Agregar clases de Bootstrap
         for field_name, field in self.fields.items():
-            field.widget.attrs['class'] = 'form-control'
+            if field_name not in ['aplica_recargo', 'activo']:
+                field.widget.attrs['class'] = 'form-control'
+        
         self.fields['aplica_recargo'].widget.attrs['class'] = 'form-check-input'
         self.fields['activo'].widget.attrs['class'] = 'form-check-input'
+        
+        # Mejorar help_text
+        self.fields['monto_base'].help_text = 'Monto base en la moneda local'
+        self.fields['porcentaje_recargo'].help_text = 'Porcentaje mensual de recargo por mora (0-100)'
+    
+    def clean_monto_base(self):
+        monto = self.cleaned_data.get('monto_base')
+        if monto is not None and monto <= 0:
+            raise ValidationError('El monto base debe ser mayor a cero.')
+        return monto
+    
+    def clean_porcentaje_recargo(self):
+        porcentaje = self.cleaned_data.get('porcentaje_recargo')
+        if porcentaje is not None:
+            if porcentaje < 0 or porcentaje > 100:
+                raise ValidationError('El porcentaje debe estar entre 0 y 100.')
+        return porcentaje
 
 class CuotaForm(forms.ModelForm):
     class Meta:
@@ -32,13 +55,15 @@ class CuotaForm(forms.ModelForm):
             'fecha_emision': forms.DateInput(attrs={'type': 'date'}),
             'fecha_vencimiento': forms.DateInput(attrs={'type': 'date'}),
             'notas': forms.Textarea(attrs={'rows': 3}),
+            'monto': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Configurar campos
         self.fields['concepto'].queryset = ConceptoCuota.objects.filter(activo=True)
-        self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True)
+        self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True).select_related('edificio')
+        
         # Agregar clases de Bootstrap
         for field_name, field in self.fields.items():
             field.widget.attrs['class'] = 'form-control'
@@ -47,16 +72,31 @@ class CuotaForm(forms.ModelForm):
         if not kwargs.get('instance'):
             self.fields['fecha_emision'].initial = timezone.now().date()
             self.fields['fecha_vencimiento'].initial = timezone.now().date() + timezone.timedelta(days=30)
+        
+        # Mejorar labels
+        self.fields['concepto'].help_text = 'Tipo de cuota a generar'
+        self.fields['vivienda'].help_text = 'Vivienda a la que se asigna la cuota'
     
     def clean(self):
         cleaned_data = super().clean()
         fecha_emision = cleaned_data.get('fecha_emision')
         fecha_vencimiento = cleaned_data.get('fecha_vencimiento')
+        vivienda = cleaned_data.get('vivienda')
         
         if fecha_emision and fecha_vencimiento and fecha_vencimiento < fecha_emision:
             raise ValidationError({'fecha_vencimiento': _('La fecha de vencimiento debe ser posterior a la fecha de emisión.')})
         
+        # Validar que la vivienda esté activa
+        if vivienda and not vivienda.activo:
+            raise ValidationError({'vivienda': 'No se pueden generar cuotas para viviendas dadas de baja.'})
+        
         return cleaned_data
+    
+    def clean_monto(self):
+        monto = self.cleaned_data.get('monto')
+        if monto is not None and monto <= 0:
+            raise ValidationError('El monto debe ser mayor a cero.')
+        return monto
 
 class GenerarCuotasForm(forms.Form):
     concepto = forms.ModelChoiceField(
@@ -65,14 +105,15 @@ class GenerarCuotasForm(forms.Form):
         widget=forms.Select(attrs={'class': 'form-control'})
     )
     edificio = forms.ModelChoiceField(
-        queryset=None,  # Se establecerá en __init__
+        queryset=Edificio.objects.all(),
         label="Edificio",
         required=False,
+        empty_label="Seleccionar edificio",
         widget=forms.Select(attrs={'class': 'form-control'})
     )
     viviendas = forms.ModelMultipleChoiceField(
-        queryset=None,  # Se establecerá en __init__
-        label="Viviendas",
+        queryset=Vivienda.objects.filter(activo=True),
+        label="Viviendas específicas",
         required=False,
         widget=forms.SelectMultiple(attrs={'class': 'form-control', 'size': 10})
     )
@@ -96,15 +137,8 @@ class GenerarCuotasForm(forms.Form):
         label="Monto personalizado (opcional)",
         required=False,
         help_text="Dejar en blanco para usar el monto base del concepto",
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'})
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'})
     )
-    
-    def __init__(self, *args, **kwargs):
-        from viviendas.models import Edificio, Vivienda
-        super().__init__(*args, **kwargs)
-        # Configurar queryset para edificios y viviendas
-        self.fields['edificio'].queryset = Edificio.objects.all()
-        self.fields['viviendas'].queryset = Vivienda.objects.filter(activo=True)
     
     def clean(self):
         cleaned_data = super().clean()
@@ -134,6 +168,7 @@ class PagoForm(forms.ModelForm):
         widgets = {
             'fecha_pago': forms.DateInput(attrs={'type': 'date'}),
             'notas': forms.Textarea(attrs={'rows': 3}),
+            'monto': forms.NumberInput(attrs={'step': '0.01', 'min': '0.01'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -141,8 +176,8 @@ class PagoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         
         # Configurar campos
-        self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True)
-        self.fields['residente'].queryset = Residente.objects.filter(activo=True)
+        self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True).select_related('edificio')
+        self.fields['residente'].queryset = Residente.objects.filter(activo=True).select_related('usuario', 'vivienda')
         
         # Agregar clases de Bootstrap
         for field_name, field in self.fields.items():
@@ -153,28 +188,71 @@ class PagoForm(forms.ModelForm):
         if not kwargs.get('instance'):
             self.fields['fecha_pago'].initial = timezone.now().date()
         
-        # Si ya tenemos una vivienda (ya sea del objeto o de los datos POST)
+        # Configurar cuotas pendientes si hay vivienda
+        self._setup_cuotas_pendientes(kwargs)
+        
+        # Mejoras en help_text
+        self.fields['referencia'].help_text = 'Número de transferencia, cheque o referencia del pago'
+        self.fields['comprobante'].help_text = 'Imagen o PDF del comprobante de pago'
+    
+    def _setup_cuotas_pendientes(self, kwargs):
+        """Configurar las cuotas pendientes para aplicar el pago"""
         vivienda_id = None
-        if kwargs.get('instance'):
-            vivienda_id = kwargs['instance'].vivienda_id
-        elif args and 'vivienda' in args[0]:
-            vivienda_id = args[0]['vivienda']
+        
+        # Obtener vivienda del objeto existente o de los datos POST
+        if kwargs.get('instance') and kwargs['instance'].vivienda:
+            vivienda_id = kwargs['instance'].vivienda.id
+        elif hasattr(self, 'data') and self.data.get('vivienda'):
+            vivienda_id = self.data.get('vivienda')
         
         if vivienda_id:
-            # Obtener las cuotas pendientes para esa vivienda
             try:
                 vivienda = Vivienda.objects.get(pk=vivienda_id)
-                cuotas_pendientes = Cuota.objects.filter(vivienda=vivienda, pagada=False)
-                choices = [(cuota.id, f"{cuota.concepto.nombre} - Vence: {cuota.fecha_vencimiento} - ${cuota.total_a_pagar()}") 
-                          for cuota in cuotas_pendientes]
+                cuotas_pendientes = Cuota.objects.filter(
+                    vivienda=vivienda, 
+                    pagada=False
+                ).order_by('fecha_vencimiento')
+                
+                choices = []
+                for cuota in cuotas_pendientes:
+                    total_pagar = cuota.total_a_pagar()
+                    vencida = " (VENCIDA)" if cuota.fecha_vencimiento < timezone.now().date() else ""
+                    label = f"{cuota.concepto.nombre} - Vence: {cuota.fecha_vencimiento.strftime('%d/%m/%Y')} - ${total_pagar}{vencida}"
+                    choices.append((cuota.id, label))
+                
                 self.fields['aplicar_a_cuotas'].choices = choices
                 
                 # Filtrar residentes de esa vivienda
-                self.fields['residente'].queryset = Residente.objects.filter(vivienda=vivienda, activo=True)
+                self.fields['residente'].queryset = Residente.objects.filter(
+                    vivienda=vivienda, 
+                    activo=True
+                ).select_related('usuario')
+                
             except Vivienda.DoesNotExist:
                 self.fields['aplicar_a_cuotas'].choices = []
         else:
             self.fields['aplicar_a_cuotas'].choices = []
+    
+    def clean_monto(self):
+        monto = self.cleaned_data.get('monto')
+        if monto is not None and monto <= 0:
+            raise ValidationError('El monto debe ser mayor a cero.')
+        return monto
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        vivienda = cleaned_data.get('vivienda')
+        residente = cleaned_data.get('residente')
+        
+        # Validar que el residente pertenezca a la vivienda
+        if vivienda and residente and residente.vivienda != vivienda:
+            raise ValidationError({'residente': 'El residente seleccionado no pertenece a la vivienda indicada.'})
+        
+        # Validar que la vivienda esté activa
+        if vivienda and not vivienda.activo:
+            raise ValidationError({'vivienda': 'No se pueden registrar pagos para viviendas dadas de baja.'})
+        
+        return cleaned_data
     
     def save(self, commit=True):
         pago = super().save(commit=False)
@@ -188,22 +266,32 @@ class PagoForm(forms.ModelForm):
             # Aplicar el pago a las cuotas seleccionadas
             cuotas_ids = self.cleaned_data.get('aplicar_a_cuotas', [])
             if cuotas_ids:
-                monto_restante = pago.monto
-                for cuota_id in cuotas_ids:
-                    try:
-                        cuota = Cuota.objects.get(pk=cuota_id)
-                        monto_aplicado = min(monto_restante, cuota.total_a_pagar())
-                        if monto_aplicado > 0:
-                            PagoCuota.objects.create(
-                                pago=pago,
-                                cuota=cuota,
-                                monto_aplicado=monto_aplicado
-                            )
-                            monto_restante -= monto_aplicado
-                    except Cuota.DoesNotExist:
-                        continue
+                self._aplicar_pago_a_cuotas(pago, cuotas_ids)
         
         return pago
+    
+    def _aplicar_pago_a_cuotas(self, pago, cuotas_ids):
+        """Aplicar el pago a las cuotas seleccionadas"""
+        monto_restante = pago.monto
+        
+        for cuota_id in cuotas_ids:
+            if monto_restante <= 0:
+                break
+                
+            try:
+                cuota = Cuota.objects.get(pk=cuota_id, pagada=False)
+                monto_aplicado = min(monto_restante, cuota.total_a_pagar())
+                
+                if monto_aplicado > 0:
+                    PagoCuota.objects.create(
+                        pago=pago,
+                        cuota=cuota,
+                        monto_aplicado=monto_aplicado
+                    )
+                    monto_restante -= monto_aplicado
+                    
+            except Cuota.DoesNotExist:
+                continue
 
 class CategoriaGastoForm(forms.ModelForm):
     class Meta:
@@ -212,14 +300,26 @@ class CategoriaGastoForm(forms.ModelForm):
         widgets = {
             'descripcion': forms.Textarea(attrs={'rows': 3}),
             'color': forms.TextInput(attrs={'type': 'color'}),
+            'presupuesto_mensual': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Agregar clases de Bootstrap
         for field_name, field in self.fields.items():
-            field.widget.attrs['class'] = 'form-control'
+            if field_name != 'activo':
+                field.widget.attrs['class'] = 'form-control'
         self.fields['activo'].widget.attrs['class'] = 'form-check-input'
+        
+        # Mejoras
+        self.fields['presupuesto_mensual'].help_text = 'Presupuesto mensual estimado para esta categoría'
+        self.fields['color'].help_text = 'Color para identificar la categoría en gráficos'
+    
+    def clean_presupuesto_mensual(self):
+        presupuesto = self.cleaned_data.get('presupuesto_mensual')
+        if presupuesto is not None and presupuesto < 0:
+            raise ValidationError('El presupuesto no puede ser negativo.')
+        return presupuesto
 
 class GastoForm(forms.ModelForm):
     class Meta:
@@ -231,6 +331,7 @@ class GastoForm(forms.ModelForm):
             'fecha': forms.DateInput(attrs={'type': 'date'}),
             'descripcion': forms.Textarea(attrs={'rows': 3}),
             'notas': forms.Textarea(attrs={'rows': 2}),
+            'monto': forms.NumberInput(attrs={'step': '0.01', 'min': '0.01'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -251,6 +352,24 @@ class GastoForm(forms.ModelForm):
         # Si es un gasto nuevo, establecer fecha predeterminada
         if not kwargs.get('instance'):
             self.fields['fecha'].initial = timezone.now().date()
+        
+        # Mejoras en help_text
+        self.fields['factura'].help_text = 'Número de factura o recibo'
+        self.fields['proveedor'].help_text = 'Nombre del proveedor o empresa'
+        self.fields['presupuestado'].help_text = 'Marcar si este gasto estaba en el presupuesto'
+        self.fields['recurrente'].help_text = 'Marcar si es un gasto que se repite mensualmente'
+    
+    def clean_monto(self):
+        monto = self.cleaned_data.get('monto')
+        if monto is not None and monto <= 0:
+            raise ValidationError('El monto debe ser mayor a cero.')
+        return monto
+    
+    def clean_fecha(self):
+        fecha = self.cleaned_data.get('fecha')
+        if fecha and fecha > timezone.now().date():
+            raise ValidationError('La fecha del gasto no puede ser futura.')
+        return fecha
     
     def save(self, commit=True):
         gasto = super().save(commit=False)
@@ -270,12 +389,13 @@ class EstadoCuentaForm(forms.ModelForm):
         widgets = {
             'fecha_inicio': forms.DateInput(attrs={'type': 'date'}),
             'fecha_fin': forms.DateInput(attrs={'type': 'date'}),
+            'saldo_anterior': forms.NumberInput(attrs={'step': '0.01'}),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Configurar campos
-        self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True)
+        self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True).select_related('edificio')
         
         # Agregar clases de Bootstrap
         for field_name, field in self.fields.items():
@@ -285,31 +405,57 @@ class EstadoCuentaForm(forms.ModelForm):
         if not kwargs.get('instance'):
             hoy = timezone.now().date()
             primer_dia_mes = hoy.replace(day=1)
-            ultimo_dia_mes = (primer_dia_mes + timezone.timedelta(days=32)).replace(day=1) - timezone.timedelta(days=1)
+            if hoy.month == 12:
+                ultimo_dia_mes = hoy.replace(year=hoy.year + 1, month=1, day=1) - timezone.timedelta(days=1)
+            else:
+                ultimo_dia_mes = hoy.replace(month=hoy.month + 1, day=1) - timezone.timedelta(days=1)
             
             self.fields['fecha_inicio'].initial = primer_dia_mes
             self.fields['fecha_fin'].initial = ultimo_dia_mes
+        
+        # Mejoras
+        self.fields['saldo_anterior'].help_text = 'Saldo pendiente del período anterior'
     
     def clean(self):
         cleaned_data = super().clean()
         fecha_inicio = cleaned_data.get('fecha_inicio')
         fecha_fin = cleaned_data.get('fecha_fin')
+        vivienda = cleaned_data.get('vivienda')
         
         if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
             raise ValidationError({'fecha_fin': _('La fecha de fin debe ser posterior a la fecha de inicio.')})
+        
+        # Validar que la vivienda esté activa
+        if vivienda and not vivienda.activo:
+            raise ValidationError({'vivienda': 'No se pueden generar estados de cuenta para viviendas dadas de baja.'})
+        
+        # Verificar que no exista ya un estado de cuenta para el mismo período
+        if vivienda and fecha_inicio and fecha_fin:
+            existing = EstadoCuenta.objects.filter(
+                vivienda=vivienda,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin
+            )
+            
+            if self.instance and self.instance.pk:
+                existing = existing.exclude(pk=self.instance.pk)
+            
+            if existing.exists():
+                raise ValidationError('Ya existe un estado de cuenta para esta vivienda en el período seleccionado.')
         
         return cleaned_data
 
 class GenerarEstadosCuentaForm(forms.Form):
     edificio = forms.ModelChoiceField(
-        queryset=None,  # Se establecerá en __init__
+        queryset=Edificio.objects.all(),
         label="Edificio",
         required=False,
+        empty_label="Seleccionar edificio",
         widget=forms.Select(attrs={'class': 'form-control'})
     )
     viviendas = forms.ModelMultipleChoiceField(
-        queryset=None,  # Se establecerá en __init__
-        label="Viviendas",
+        queryset=Vivienda.objects.filter(activo=True),
+        label="Viviendas específicas",
         required=False,
         widget=forms.SelectMultiple(attrs={'class': 'form-control', 'size': 10})
     )
@@ -329,19 +475,15 @@ class GenerarEstadosCuentaForm(forms.Form):
     )
     
     def __init__(self, *args, **kwargs):
-        from viviendas.models import Edificio, Vivienda
         super().__init__(*args, **kwargs)
-        # Configurar queryset para edificios y viviendas
-        self.fields['edificio'].queryset = Edificio.objects.all()
-        self.fields['viviendas'].queryset = Vivienda.objects.filter(activo=True)
         
-        # Configurar fechas predeterminadas
+        # Configurar fechas predeterminadas del mes anterior
         hoy = timezone.now().date()
-        primer_dia_mes = hoy.replace(day=1)
-        ultimo_dia_mes = (primer_dia_mes + timezone.timedelta(days=32)).replace(day=1) - timezone.timedelta(days=1)
+        primer_dia_mes_anterior = (hoy.replace(day=1) - timezone.timedelta(days=1)).replace(day=1)
+        ultimo_dia_mes_anterior = hoy.replace(day=1) - timezone.timedelta(days=1)
         
-        self.fields['fecha_inicio'].initial = primer_dia_mes
-        self.fields['fecha_fin'].initial = ultimo_dia_mes
+        self.fields['fecha_inicio'].initial = primer_dia_mes_anterior
+        self.fields['fecha_fin'].initial = ultimo_dia_mes_anterior
     
     def clean(self):
         cleaned_data = super().clean()
@@ -358,3 +500,52 @@ class GenerarEstadosCuentaForm(forms.Form):
             raise ValidationError({'fecha_fin': _('La fecha de fin debe ser posterior a la fecha de inicio.')})
         
         return cleaned_data
+
+# ===== FORMULARIOS ADICIONALES PARA FILTROS =====
+
+class CuotaFiltroForm(forms.Form):
+    """Formulario para filtrar cuotas"""
+    concepto = forms.ModelChoiceField(
+        queryset=ConceptoCuota.objects.filter(activo=True),
+        required=False,
+        empty_label="Todos los conceptos"
+    )
+    edificio = forms.ModelChoiceField(
+        queryset=Edificio.objects.all(),
+        required=False,
+        empty_label="Todos los edificios"
+    )
+    vivienda = forms.ModelChoiceField(
+        queryset=Vivienda.objects.filter(activo=True),
+        required=False,
+        empty_label="Todas las viviendas"
+    )
+    estado = forms.ChoiceField(
+        choices=[('', 'Todas'), ('pagada', 'Pagadas'), ('pendiente', 'Pendientes')],
+        required=False
+    )
+    vencimiento = forms.ChoiceField(
+        choices=[('', 'Todas'), ('vencidas', 'Vencidas'), ('proximas', 'Próximas a vencer')],
+        required=False
+    )
+
+class PagoFiltroForm(forms.Form):
+    """Formulario para filtrar pagos"""
+    edificio = forms.ModelChoiceField(
+        queryset=Edificio.objects.all(),
+        required=False,
+        empty_label="Todos los edificios"
+    )
+    vivienda = forms.ModelChoiceField(
+        queryset=Vivienda.objects.filter(activo=True),
+        required=False,
+        empty_label="Todas las viviendas"
+    )
+    estado = forms.ChoiceField(
+        choices=[('', 'Todos')] + list(Pago.ESTADO_CHOICES),
+        required=False
+    )
+    metodo = forms.ChoiceField(
+        choices=[('', 'Todos')] + list(Pago.METODO_PAGO_CHOICES),
+        required=False
+    )

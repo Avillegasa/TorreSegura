@@ -3,12 +3,29 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
+from django.http import JsonResponse
 from . import views
 from usuarios.views import CustomLoginView
 
+def health_check(request):
+    """Endpoint básico para verificar que la app funciona"""
+    return JsonResponse({'status': 'ok', 'message': 'Django app is running!'})
+
+def home_view(request):
+    """Vista básica de inicio"""
+    return JsonResponse({
+        'message': 'Bienvenido a Condominio App',
+        'status': 'success',
+        'django_running': True
+    })
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('health/', health_check, name='health_check'),
     path('', views.home, name='home'),
+    path('test-email/', views.test_email, name='test_email'), # Endpoint para probar el envío de emails
+     
     path('dashboard/', views.dashboard, name='dashboard'),
     path('perfil/', views.perfil, name='perfil'),
     
@@ -52,3 +69,4 @@ if settings.DEBUG:
 # Manejadores de errores
 handler404 = 'condominio_app.views.handler404'
 handler500 = 'condominio_app.views.handler500'
+""" path('', views.home, name='home'), """

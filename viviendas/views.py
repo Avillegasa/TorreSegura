@@ -1,4 +1,4 @@
-# views.py de viviendas
+# views.py de viviendas - VERSIÓN CORREGIDA
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, View
@@ -20,17 +20,29 @@ class EdificioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView
     form_class = EdificioForm
     template_name = 'viviendas/edificio_form.html'
     success_url = reverse_lazy('edificio-list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, 'Edificio creado exitosamente.')
+        return super().form_valid(form)
 
 class EdificioUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Edificio
     form_class = EdificioForm
     template_name = 'viviendas/edificio_form.html'
     success_url = reverse_lazy('edificio-list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, 'Edificio actualizado exitosamente.')
+        return super().form_valid(form)
 
 class EdificioDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
     model = Edificio
     template_name = 'viviendas/edificio_confirm_delete.html'
     success_url = reverse_lazy('edificio-list')
+    
+    def delete(self, request, *args, **kwargs):
+        messages.success(request, 'Edificio eliminado exitosamente.')
+        return super().delete(request, *args, **kwargs)
 
 class EdificioDetailView(LoginRequiredMixin, DetailView):
     model = Edificio
@@ -103,35 +115,52 @@ class ViviendaListView(LoginRequiredMixin, ListView):
 
         return context
 
-
+# ✅ CORRECCIÓN 1: Agregar get_form_kwargs en ViviendaCreateView
 class ViviendaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
     model = Vivienda
     form_class = ViviendaForm
     template_name = 'viviendas/vivienda_form.html'
     success_url = reverse_lazy('vivienda-list')
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user_actual'] = self.request.user
         return kwargs
+    
+    def form_valid(self, form):
+        messages.success(self.request, 'Vivienda creada exitosamente.')
+        return super().form_valid(form)
 
-
+# ✅ CORRECCIÓN 2: Agregar get_form_kwargs en ViviendaUpdateView
 class ViviendaUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Vivienda
     form_class = ViviendaForm
     template_name = 'viviendas/vivienda_form.html'
     success_url = reverse_lazy('vivienda-list')
+    
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user_actual'] = self.request.user
+        return kwargs
+    
+    def form_valid(self, form):
+        messages.success(self.request, 'Vivienda actualizada exitosamente.')
+        return super().form_valid(form)
 
 class ViviendaDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
     model = Vivienda
     template_name = 'viviendas/vivienda_confirm_delete.html'
     success_url = reverse_lazy('vivienda-list')
+    
+    def delete(self, request, *args, **kwargs):
+        messages.success(request, 'Vivienda eliminada exitosamente.')
+        return super().delete(request, *args, **kwargs)
 
 class ViviendaDetailView(LoginRequiredMixin, DetailView):
     model = Vivienda
     template_name = 'viviendas/vivienda_detail.html'
     context_object_name = 'vivienda'
     
-    # En la vista ViviendaDetailView
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
@@ -288,21 +317,36 @@ class ResidenteCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateVie
     def form_invalid(self, form):
         messages.error(self.request, "Por favor corrige los errores en el formulario.")
         return super().form_invalid(form)
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user_actual'] = self.request.user
         return kwargs
 
+# ✅ CORRECCIÓN 3: Agregar get_form_kwargs en ResidenteUpdateView
 class ResidenteUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Residente
     form_class = ResidenteCreationForm
     template_name = 'viviendas/residente_form.html'
     success_url = reverse_lazy('residente-list')
+    
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user_actual'] = self.request.user
+        return kwargs
+    
+    def form_valid(self, form):
+        messages.success(self.request, 'Residente actualizado exitosamente.')
+        return super().form_valid(form)
 
 class ResidenteDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
     model = Residente
     template_name = 'viviendas/residente_confirm_delete.html'
     success_url = reverse_lazy('residente-list')
+    
+    def delete(self, request, *args, **kwargs):
+        messages.success(request, 'Residente eliminado exitosamente.')
+        return super().delete(request, *args, **kwargs)
 
 class ResidenteDetailView(LoginRequiredMixin, DetailView):
     model = Residente

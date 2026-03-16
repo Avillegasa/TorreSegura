@@ -1,6 +1,9 @@
 # Agregar estos imports al inicio del archivo views.py
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
+from django.utils import timezone
+from .models import Alerta
 import json
 
 # Agregar esta vista al final del archivo views.py

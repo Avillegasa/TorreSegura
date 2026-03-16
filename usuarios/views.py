@@ -387,16 +387,21 @@ class CustomLoginView(LoginView):
     def form_valid(self, form):
         user = form.get_user()
 
-        if user.rol is None or user.rol.nombre not in ['Administrador', 'Gerente']:
-            messages.error(self.request, "Debe ingresar desde la aplicación móvil.",extra_tags='danger')
+        # Cargar rol (si hay problemas de BD, usar el usuario ya autenticado por el form)
+        try:
+            user_with_rol = Usuario.objects.select_related('rol').get(pk=user.pk)
+        except Exception:
+            user_with_rol = user
+
+        if user_with_rol.rol is None or user_with_rol.rol.nombre not in ['Administrador', 'Gerente']:
+            messages.error(self.request, "Debe ingresar desde la aplicación móvil.", extra_tags='danger')
             return redirect('login')
 
-        # Solo para Gerente: bloquear si no verificó su correo
-        if user.rol.nombre in ['Administrador', 'Gerente'] and not user.email_confirmado:
-            self.enviar_verificacion_email(user)
+        # Para Administrador/Gerente: bloquear si no verificó su correo
+        if user_with_rol.rol.nombre in ['Administrador', 'Gerente'] and not user_with_rol.email_confirmado:
+            self.enviar_verificacion_email(user_with_rol)
             messages.warning(self.request, "Tu cuenta aún no ha sido verificada. Revisa tu correo para activarla.")
             return redirect('login')
-
 
         return super().form_valid(form)
 
@@ -406,9 +411,10 @@ class CustomLoginView(LoginView):
         url = self.request.build_absolute_uri(reverse('verificar-email', kwargs={'uidb64': uid, 'token': token}))
         subject = 'Verificación de correo para TorreSegura'
         message = f'Hola {user.first_name},\n\nPor favor verifica tu cuenta haciendo clic en el siguiente enlace:\n\n{url}'
+
         try:
             send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
-        except Exception as exc:
+        except Exception:
             logger.exception("Error enviando correo de verificación a %s", user.email)
             messages.error(
                 self.request,

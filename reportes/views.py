@@ -414,12 +414,35 @@ def reporte_pdf(request, pk):
     try:
         html = render_to_string(template, context)
         response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'filename="reporte_{reporte.nombre}_{timezone.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
+        response['Content-Disposition'] = f'attachment; filename="reporte_{reporte.nombre}_{timezone.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
         weasyprint.HTML(string=html).write_pdf(target=response)
         return response
     except Exception as e:
         messages.error(request, f"Error generando PDF: {str(e)}")
         return redirect('reporte-list')
+
+def reporte_reactivar(request, pk):
+    reporte = get_object_or_404(Reporte, pk=pk)
+    reporte.activo = True
+    reporte.save()
+    return redirect('reporte-list')
+
+def generar_grafico_barras(labels, values, titulo):
+    try:
+        fig, ax = plt.subplots(figsize=(5, 2.5))
+        ax.bar(labels, values, color='#007bff')
+        ax.set_title(titulo)
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        plt.close(fig)
+        buf.seek(0)
+        image_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        return f'data:image/png;base64,{image_base64}'
+    except Exception as e:
+        print(f"Error generando gráfico: {e}")
+        return None
+
 def reporte_descargar(request, pk):
     from viviendas.models import Residente, Vivienda
     from personal.models import Empleado
@@ -557,12 +580,20 @@ def reporte_descargar(request, pk):
 
     # --- Generación según formato ---
     if formato == 'PDF':
+        if not WEASYPRINT_AVAILABLE:
+            messages.error(request, "Funcionalidad PDF no disponible en este sistema. Instale WeasyPrint para usar esta función.")
+            return redirect('reporte-list')
+
         template = 'reportes/pdf/reporte_%s.html' % reporte.tipo.lower()
-        html = render_to_string(template, context)
-        response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="reporte_{reporte.nombre}_{timezone.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
-        weasyprint.HTML(string=html).write_pdf(target=response)
-        return response
+        try:
+            html = render_to_string(template, context)
+            response = HttpResponse(content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="reporte_{reporte.nombre}_{timezone.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
+            weasyprint.HTML(string=html).write_pdf(target=response)
+            return response
+        except Exception as e:
+            messages.error(request, f"Error generando PDF: {str(e)}")
+            return redirect('reporte-list')
 
     elif formato == 'CSV':
         response = HttpResponse(content_type='text/csv')
@@ -614,24 +645,3 @@ def get_logo_base64():
     with open(logo_path, 'rb') as image_file:
         encoded = base64.b64encode(image_file.read()).decode('utf-8')
     return f'data:image/png;base64,{encoded}'
-def reporte_reactivar(request, pk):
-    reporte = get_object_or_404(Reporte, pk=pk)
-    reporte.activo = True
-    reporte.save()
-    return redirect('reporte-list')
-
-def generar_grafico_barras(labels, values, titulo):
-    try:
-        fig, ax = plt.subplots(figsize=(5, 2.5))
-        ax.bar(labels, values, color='#007bff')
-        ax.set_title(titulo)
-        plt.tight_layout()
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png')
-        plt.close(fig)
-        buf.seek(0)
-        image_base64 = base64.b64encode(buf.read()).decode('utf-8')
-        return f'data:image/png;base64,{image_base64}'
-    except Exception as e:
-        print(f"Error generando gráfico: {e}")
-        return None
