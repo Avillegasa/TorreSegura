@@ -240,11 +240,7 @@ AUTHENTICATION_BACKENDS = [
     # `allauth` specific authentication methods, such as login by e-mail
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
-
-if "torresegura" in hostname:
-    SITE_ID = 1  # Sitio móvil
-else:
-    SITE_ID = 2  # Sitio escritorio
+SITE_ID = 1
 
 # Configuración de AllAuth
 ACCOUNT_EMAIL_REQUIRED = True
@@ -284,8 +280,8 @@ SOCIALACCOUNT_AUTO_SIGNUP = True
 SOCIALACCOUNT_ADAPTER = 'usuarios.adapters.CustomSocialAccountAdapter'  # Opcional para personalizar el proceso
 
 # Reemplaza con las credenciales reales de tu aplicación de Google
-GOOGLE_CLIENT_ID = '54385706918-qqe70jbg6pvo897o0970kmmfs5hbg44g.apps.googleusercontent.com'
-GOOGLE_SECRET = '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'
+GOOGLE_CLIENT_ID = env('GOOGLE_CLIENT_ID', default='')
+GOOGLE_SECRET = env('GOOGLE_SECRET', default='')
 
 # Notificaciones con mensajes
 MESSAGE_STORAGE = 'django.contrib.messages.storage.session.SessionStorage'
@@ -293,8 +289,16 @@ MESSAGE_STORAGE = 'django.contrib.messages.storage.session.SessionStorage'
 # Configuración de correo para desarrollo
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Para desarrollo, los correos se mostrarán en la consola
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
-# Para producción, usa esto:
-EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+# Email backend:
+# - En DEBUG: por defecto consola (no requiere SMTP)
+# - Si defines EMAIL_BACKEND en .env, se respeta (útil para probar SMTP en dev)
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='')
+if not EMAIL_BACKEND:
+    EMAIL_BACKEND = (
+        'django.core.mail.backends.console.EmailBackend'
+        if DEBUG
+        else 'django.core.mail.backends.smtp.EmailBackend'
+    )
 EMAIL_HOST = env('EMAIL_HOST', default='smtp.gmail.com')
 EMAIL_PORT = env.int('EMAIL_PORT', default=587)
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)

@@ -41,6 +41,7 @@ from django.views.decorators.http import require_http_methods
 import json
 from personal.models import Empleado
 import logging
+logger = logging.getLogger(__name__)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, DjangoModelPermissions])
 def api_clientes_potenciales(request):
@@ -405,7 +406,15 @@ class CustomLoginView(LoginView):
         url = self.request.build_absolute_uri(reverse('verificar-email', kwargs={'uidb64': uid, 'token': token}))
         subject = 'Verificación de correo para TorreSegura'
         message = f'Hola {user.first_name},\n\nPor favor verifica tu cuenta haciendo clic en el siguiente enlace:\n\n{url}'
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+        try:
+            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+        except Exception as exc:
+            logger.exception("Error enviando correo de verificación a %s", user.email)
+            messages.error(
+                self.request,
+                "No se pudo enviar el correo de verificación (revisa configuración SMTP).",
+                extra_tags='danger',
+            )
 
 
 class VerificarEmailView(View):
