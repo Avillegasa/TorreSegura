@@ -42,6 +42,7 @@ def setup():
             
             # Crear superusuario (administrador)
             print("Creando superusuario...")
+            admin_role = Rol.objects.get(nombre='Administrador')
             if not Usuario.objects.filter(username='admin').exists():
                 admin_user = Usuario.objects.create_superuser(
                     username='admin',
@@ -49,8 +50,23 @@ def setup():
                     password='admin123',
                     first_name='Administrador',
                     last_name='Sistema',
+                    email_confirmado=True,
                 )
-                admin_user.rol = Rol.objects.get(nombre='Administrador')
+                admin_user.rol = admin_role
+                admin_user.save()
+            else:
+                admin_user = Usuario.objects.get(username='admin')
+                # Asegurar que el admin de dev pueda entrar al panel web
+                if not admin_user.email_confirmado:
+                    admin_user.email_confirmado = True
+                if admin_user.rol != admin_role:
+                    admin_user.rol = admin_role
+                if not admin_user.is_staff:
+                    admin_user.is_staff = True
+                if not admin_user.is_superuser:
+                    admin_user.is_superuser = True
+                if not admin_user.is_active:
+                    admin_user.is_active = True
                 admin_user.save()
             
             # Crear usuario vigilante

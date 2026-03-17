@@ -25,6 +25,183 @@ from django.contrib.auth import get_user_model
 from viviendas.models import Edificio, Residente,Vivienda
 from usuarios.models import Gerente, Vigilante
 from uuid import uuid4
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated, DjangoModelPermissions, AllowAny
+from rest_framework.response import Response
+from .serializers import ClientePotencialSerializer
+from django.contrib.auth.decorators import login_required, permission_required
+from django.utils.decorators import method_decorator
+from django.views.generic import ListView
+from .models import ClientePotencial
+from django.db.models import Q
+# Agregar estas importaciones al inicio de tu views.py
+from rest_framework import status
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
+from personal.models import Empleado
+import logging
+logger = logging.getLogger(__name__)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, DjangoModelPermissions])
+def api_clientes_potenciales(request):
+    clientes = ClientePotencial.objects.all().order_by('-fecha_contacto')
+    serializer = ClientePotencialSerializer(clientes, many=True)
+    return Response(serializer.data)
+# ====== OPCIÓN 1: Usando Django REST Framework (Recomendado) ======
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Permite acceso sin autenticación
+def crear_cliente_potencial(request):
+    """
+    API endpoint para crear un cliente potencial desde NextJS
+    """
+    try:
+        # Obtener datos del request
+        data = request.data
+        
+        # Validar campos requeridos
+        campos_requeridos = ['nombre_completo', 'email']
+        for campo in campos_requeridos:
+            if not data.get(campo):
+                return Response({
+                    'error': f'El campo {campo} es requerido'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validar formato de email básico
+        email = data.get('email')
+        if not '@' in email or not '.' in email:
+            return Response({
+                'error': 'El formato del email no es válido'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Crear el cliente potencial
+        cliente = ClientePotencial.objects.create(
+            nombre_completo=data.get('nombre_completo', '').strip(),
+            telefono=data.get('telefono', '').strip(),
+            email=email.strip().lower(),
+            ubicacion=data.get('ubicacion', '').strip(),
+            mensaje=data.get('mensaje', '').strip()
+        )
+        
+        return Response({
+            'success': True,
+            'message': f"Gracias {cliente.nombre_completo}, hemos recibido tu mensaje correctamente. ¡Pronto nos pondremos en contacto!",
+            'cliente_id': cliente.id,
+            'fecha': cliente.fecha_contacto.strftime('%Y-%m-%d %H:%M:%S')
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ====== OPCIÓN 2: Usando Django Views tradicionales ======
+@csrf_exempt  # Desactiva CSRF para esta vista (necesario para requests externos)
+@require_http_methods(["POST"])
+def crear_cliente_potencial_simple(request):
+    """
+    Vista simple para crear cliente potencial sin DRF
+    """
+    try:
+        # Parsear JSON del request
+        data = json.loads(request.body)
+        
+        # Validar campos requeridos
+        if not data.get('nombre_completo') or not data.get('email'):
+            return JsonResponse({
+                'success': False,
+                'error': 'Los campos nombre_completo y email son requeridos'
+            }, status=400)
+        
+        # Crear cliente potencial
+        cliente = ClientePotencial.objects.create(
+            nombre_completo=data.get('nombre_completo', '').strip(),
+            telefono=data.get('telefono', '').strip(),
+            email=data.get('email', '').strip().lower(),
+            ubicacion=data.get('ubicacion', '').strip(),
+            mensaje=data.get('mensaje', '').strip()
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Cliente potencial creado exitosamente',
+            'id': cliente.id
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Formato JSON inválido'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': 'Error interno del servidor',
+            'details': str(e)
+        }, status=500)
+
+# ====== Vista para listar clientes potenciales (ya existente, mejorada) ======
+@method_decorator([login_required, permission_required('usuarios.ver_cliente_potencial', raise_exception=True)], name='dispatch')
+class ClientePotencialListView(ListView):
+    model = ClientePotencial
+    template_name = 'usuarios/clientes_potenciales.html'
+    context_object_name = 'clientes'
+    ordering = ['-fecha_contacto']
+    paginate_by = 20  # Paginación para mejor rendimiento
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Filtro por búsqueda
+        search = self.request.GET.get('search', '')
+        if search:
+            queryset = queryset.filter(
+                Q(nombre_completo__icontains=search) |
+                Q(email__icontains=search) |
+                Q(telefono__icontains=search)
+            )
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['search'] = self.request.GET.get('search', '')
+        context['total_clientes'] = self.get_queryset().count()
+        return context
+
+# ====== API para obtener estadísticas (opcional) ======
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, DjangoModelPermissions])
+def estadisticas_clientes_potenciales(request):
+    """
+    Obtener estadísticas de clientes potenciales
+    """
+    from django.db.models import Count
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    # Estadísticas básicas
+    total_clientes = ClientePotencial.objects.count()
+    
+    # Clientes de los últimos 30 días
+    hace_30_dias = timezone.now() - timedelta(days=30)
+    clientes_mes = ClientePotencial.objects.filter(
+        fecha_contacto__gte=hace_30_dias
+    ).count()
+    
+    # Clientes de la última semana
+    hace_7_dias = timezone.now() - timedelta(days=7)
+    clientes_semana = ClientePotencial.objects.filter(
+        fecha_contacto__gte=hace_7_dias
+    ).count()
+    
+    return Response({
+        'total_clientes': total_clientes,
+        'clientes_ultimo_mes': clientes_mes,
+        'clientes_ultima_semana': clientes_semana,
+        'crecimiento_semanal': clientes_semana,
+        'crecimiento_mensual': clientes_mes
+    })
 # Función auxiliar para comprobar si es administrador
 def tiene_acceso_web(user):
     return (
@@ -45,11 +222,10 @@ class AccesoWebPermitidoMixin(UserPassesTestMixin):
         return tiene_acceso_web(self.request.user)
 
     def handle_no_permission(self):
-        messages.error(self.request, "Debe ingresar desde la aplicación móvil.")
+        messages.error(self.request, "Debe ingresar desde la aplicación móvil.",extra_tags='danger')
         return redirect('login')  # Puedes redirigir a otra vista si lo deseas
 
 
-# Vistas de Usuarios
 class UsuarioListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Usuario
     template_name = 'usuarios/usuario_list.html'
@@ -57,17 +233,50 @@ class UsuarioListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
 
     def get_queryset(self):
         queryset = super().get_queryset().filter(rol__isnull=False)
-        query = self.request.GET.get("q")
+        query = self.request.GET.get("q", "").strip()
+        rol_id = self.request.GET.get("rol", "").strip()
+        edificio_id = self.request.GET.get("edificio", "").strip()
+        
+        if edificio_id and edificio_id.isdigit():
+            queryset = queryset.filter(
+                Q(gerente__edificio_id=edificio_id) |
+                Q(vigilante__edificio_id=edificio_id) |
+                Q(residente__vivienda__edificio_id=edificio_id) |
+                Q(empleado__edificio_id=edificio_id)
+            )
+        # Filtro de búsqueda por texto
         if query:
-            queryset = queryset.filter(username__icontains=query)
+            queryset = queryset.filter(
+                Q(username__icontains=query) |
+                Q(first_name__icontains=query) |
+                Q(last_name__icontains=query) |
+                Q(email__icontains=query)
+            )
+
+        # Filtro por rol
+        if rol_id and rol_id.isdigit():
+            queryset = queryset.filter(rol_id=int(rol_id))
+
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        # Parámetros de búsqueda
         context["q"] = self.request.GET.get("q", "")
+        
+        # Parámetros de rol - necesitamos tanto el string como el entero
+        rol_str = self.request.GET.get("rol", "").strip()
+        context["rol"] = rol_str  # Para el template
+        context["rol_id"] = int(rol_str) if rol_str.isdigit() else None
+        
+        # Todos los roles disponibles
+        context["roles"] = Rol.objects.all()
+        edificio_str = self.request.GET.get("edificio", "").strip()
+        context["edificio"] = edificio_str
+        context["edificio_id"] = int(edificio_str) if edificio_str.isdigit() else None
+        context["edificios"] = Edificio.objects.all()
         return context
-
-
 
 
 class UsuarioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
@@ -80,20 +289,35 @@ class UsuarioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView)
         rol = form.cleaned_data.get("rol")
 
         if rol and rol.nombre == "Personal":
-            # Crear usuario fantasma sin acceso
-            usuario = Usuario.objects.create(
-                username=f"personal_{uuid4().hex[:6]}",  # nombre aleatorio
-                first_name=form.cleaned_data.get("first_name") or "Empleado",
-                last_name=form.cleaned_data.get("last_name") or "Condominio",
-                is_active=False,
-                rol=rol
-            )
+            usuario = form.save(commit=False)
+            usuario.is_active = True
+            
+            # Asignar username si esta vacío
+            if not usuario.username:
+                usuario.username = f"personal_{uuid4().hex[:6]}"
+
+            if not usuario.email:
+                usuario.email = f"{uuid4().hex[:8]}@noemail.com"
             usuario.set_unusable_password()
             usuario.save()
+            
+            Empleado.objects.create(
+                usuario=usuario,
+                puesto=form.cleaned_data.get("puesto"),
+                edificio=form.cleaned_data.get("edificio"),
+                fecha_contratacion=form.cleaned_data.get("fecha_contratacion"),
+                tipo_contrato=form.cleaned_data.get("tipo_contrato"),
+                salario=form.cleaned_data.get("salario"),
+                contacto_emergencia=form.cleaned_data.get("contacto_emergencia"),
+                telefono_emergencia=form.cleaned_data.get("telefono_emergencia"),
+                especialidad=form.cleaned_data.get("especialidad"),
+                creado_por=self.request.user
+            )
+
             self.object = usuario
-            messages.success(self.request, "Empleado registrado sin acceso al sistema.")
+            messages.success(self.request, "Empleado registrado correctamente.")
             return redirect(self.success_url)
-        
+
         
         
         
@@ -137,7 +361,20 @@ class UsuarioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView)
 
             Vigilante.objects.create(usuario=usuario, edificio=edificio)
         messages.success(self.request, "Usuario creado correctamente.")
+        logger = logging.getLogger(__name__)
+        logger.warning(f"POST para crear {rol.nombre} recibido correctamente.")
+        logger.warning(f"Datos: {form.cleaned_data}")
         return super().form_valid(form)
+    
+    def form_invalid(self, form):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("⚠️ FORMULARIO INVÁLIDO")
+        logger.warning(form.errors.as_json())  # Esto te mostrará qué campos fallaron
+        logger.warning(form.cleaned_data)
+        messages.error(self.request, "Ocurrió un error al registrar el usuario. Revisa los datos.",extra_tags='danger')
+        return super().form_invalid(form)
+  
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user_actual'] = self.request.user  # <- Esto es esencial
@@ -150,16 +387,21 @@ class CustomLoginView(LoginView):
     def form_valid(self, form):
         user = form.get_user()
 
-        if user.rol is None or user.rol.nombre not in ['Administrador', 'Gerente']:
-            messages.warning(self.request, "Debe ingresar desde la aplicación móvil")
+        # Cargar rol (si hay problemas de BD, usar el usuario ya autenticado por el form)
+        try:
+            user_with_rol = Usuario.objects.select_related('rol').get(pk=user.pk)
+        except Exception:
+            user_with_rol = user
+
+        if user_with_rol.rol is None or user_with_rol.rol.nombre not in ['Administrador', 'Gerente']:
+            messages.error(self.request, "Debe ingresar desde la aplicación móvil.", extra_tags='danger')
             return redirect('login')
 
-        # Solo para Gerente: bloquear si no verificó su correo
-        if user.rol.nombre in ['Administrador', 'Gerente'] and not user.email_confirmado:
-            self.enviar_verificacion_email(user)
+        # Para Administrador/Gerente: bloquear si no verificó su correo
+        if user_with_rol.rol.nombre in ['Administrador', 'Gerente'] and not user_with_rol.email_confirmado:
+            self.enviar_verificacion_email(user_with_rol)
             messages.warning(self.request, "Tu cuenta aún no ha sido verificada. Revisa tu correo para activarla.")
             return redirect('login')
-
 
         return super().form_valid(form)
 
@@ -169,7 +411,16 @@ class CustomLoginView(LoginView):
         url = self.request.build_absolute_uri(reverse('verificar-email', kwargs={'uidb64': uid, 'token': token}))
         subject = 'Verificación de correo para TorreSegura'
         message = f'Hola {user.first_name},\n\nPor favor verifica tu cuenta haciendo clic en el siguiente enlace:\n\n{url}'
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+
+        try:
+            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+        except Exception:
+            logger.exception("Error enviando correo de verificación a %s", user.email)
+            messages.error(
+                self.request,
+                "No se pudo enviar el correo de verificación (revisa configuración SMTP).",
+                extra_tags='danger',
+            )
 
 
 class VerificarEmailView(View):
@@ -229,7 +480,14 @@ class UsuarioChangeStateView(LoginRequiredMixin, AccesoWebPermitidoMixin, View):
 
         estado = "activado" if usuario.is_active else "desactivado"
         messages.success(request, f'El usuario {usuario.username} ha sido {estado} correctamente.')
-        return HttpResponseRedirect(reverse_lazy('usuario-list'))
+
+        # ✅ Redirigir según el rol del usuario autenticado
+        if request.user.rol and request.user.rol.nombre == "Administrador":
+            return HttpResponseRedirect(reverse_lazy('usuario-list'))
+        elif request.user.rol and request.user.rol.nombre == "Gerente":
+            return HttpResponseRedirect(reverse_lazy('residente-list'))
+        else:
+            return HttpResponseRedirect(reverse_lazy('dashboard'))
 
 class UsuarioDetailView(LoginRequiredMixin, DetailView):
     model = Usuario

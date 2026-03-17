@@ -46,26 +46,30 @@
                     {% for movimiento in movimientos %}
                     <tr>
                         <td data-label="#">{{ movimiento.id }}</td>
-                        <td data-label="Residente">{{ movimiento.residente }}</td>
+                        <td data-label="Residente">
+                            {{ movimiento.residente.usuario.get_full_name }} <br>
+                            <small class="text-muted">{{ movimiento.residente.vivienda.edificio.nombre }}</small>
+
+                        </td>
                         <td data-label="Tipo">
                             {% if movimiento.fecha_hora_entrada and not movimiento.fecha_hora_salida %}
-                                <span class="badge text-bg-success">Entrada</span>
+                            <span class="badge text-bg-success">Entrada</span>
                             {% elif movimiento.fecha_hora_salida and not movimiento.fecha_hora_entrada %}
-                                <span class="badge text-bg-danger">Salida</span>
+                            <span class="badge text-bg-danger">Salida</span>
                             {% endif %}
                         </td>
                         <td data-label="Fecha/Hora">
                             {% if movimiento.fecha_hora_entrada and not movimiento.fecha_hora_salida %}
-                                {{ movimiento.fecha_hora_entrada|date:"d/m/Y H:i" }}
+                            {{ movimiento.fecha_hora_entrada|date:"d/m/Y H:i" }}
                             {% elif movimiento.fecha_hora_salida and not movimiento.fecha_hora_entrada %}
-                                {{ movimiento.fecha_hora_salida|date:"d/m/Y H:i" }}
+                            {{ movimiento.fecha_hora_salida|date:"d/m/Y H:i" }}
                             {% endif %}
                         </td>
                         <td data-label="Vehículo">
                             {% if movimiento.vehiculo %}
-                                <i class="fas fa-check text-success"></i>
+                            <i class="fas fa-check text-success"></i>
                             {% else %}
-                                <i class="fas fa-times text-danger"></i>
+                            <i class="fas fa-times text-danger"></i>
                             {% endif %}
                         </td>
                         <td data-label="Placa">{{ movimiento.placa_vehiculo|default:"-" }}</td>

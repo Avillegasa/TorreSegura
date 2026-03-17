@@ -67,12 +67,13 @@ def generar_qr_visita(request, visita_id):
 
         datos_qr = {
             "id": visita.id,
+            "nonce": visita.qr_nonce,
             "nombre_visitante": visita.nombre_visitante,
             "documento_visitante": visita.documento_visitante,
             "vivienda": str(visita.vivienda_destino),
             "autorizado_por": str(visita.residente_autoriza),
             "fecha": visita.fecha_hora_entrada.strftime("%Y-%m-%d %H:%M"),
-            "firma": generar_firma_qr(visita.id)
+            "firma": generar_firma_qr(visita.id, nonce=visita.qr_nonce),
         }
 
         qr = qrcode.make(datos_qr)
@@ -88,22 +89,50 @@ def generar_qr_visita(request, visita_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def verificar_qr_visita(request):
+    # Solo seguridad (Vigilante) y Administrador deben verificar QRs
+    rol = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+    if not (request.user.is_superuser or rol in ['Vigilante', 'Administrador']):
+        return Response(
+            {'valido': False, 'mensaje': 'No tienes permisos para verificar códigos QR.'},
+            status=403,
+        )
+
     data = request.data
     visita_id = data.get('id')
     firma = data.get('firma')
+    nonce = data.get('nonce')
 
     if not visita_id or not firma:
         return Response({'valido': False, 'mensaje': 'ID y firma requeridos.'}, status=400)
 
-    # Verificar la firma antes de continuar
-    if not verificar_firma_qr(int(visita_id), firma):
-        return Response({'valido': False, 'mensaje': 'QR inválido o alterado.'}, status=403)
-
     try:
         visita = Visita.objects.get(id=visita_id)
 
+        # Anti-replay: si ya fue usado, rechazar
+        if getattr(visita, 'qr_usado', False):
+            return Response(
+                {'valido': False, 'mensaje': 'Este QR ya fue utilizado.'},
+                status=409,
+            )
+
+        # Verificar la firma antes de continuar
+        # - Si el request trae nonce, validamos con el esquema nuevo.
+        # - Si no trae nonce, aceptamos temporalmente el esquema antiguo por compatibilidad.
+        if nonce:
+            firma_ok = verificar_firma_qr(int(visita_id), firma, nonce=str(nonce))
+        else:
+            firma_ok = verificar_firma_qr(int(visita_id), firma)
+
+        if not firma_ok:
+            return Response({'valido': False, 'mensaje': 'QR inválido o alterado.'}, status=403)
+
         if visita.fecha_hora_salida:
             return Response({'valido': False, 'mensaje': 'Esta visita ya fue finalizada.'})
+
+        # Consumir QR (anti-replay): se marca usado al primer escaneo exitoso
+        visita.qr_usado = True
+        visita.qr_usado_en = timezone.now()
+        visita.save(update_fields=['qr_usado', 'qr_usado_en'])
 
         return Response({
             'valido': True,
@@ -146,12 +175,14 @@ def crear_visita(request):
             registrado_por=request.user,
             fecha_hora_entrada=timezone.now()
         )
-        # 📦 Generar el QR
-        datos_qr = {
+
+        # 📦 Generar el QR (anti-replay)
+        qr_payload = {
             "id": visita.id,
-            "firma": generar_firma_qr(visita.id)
+            "nonce": visita.qr_nonce,
+            "firma": generar_firma_qr(visita.id, nonce=visita.qr_nonce),
         }
-        qr = qrcode.make(json.dumps(datos_qr))
+        qr = qrcode.make(json.dumps(qr_payload))
         buffer = io.BytesIO()
         qr.save(buffer, format='PNG')
         qr_base64 = base64.b64encode(buffer.getvalue()).decode()
@@ -159,7 +190,9 @@ def crear_visita(request):
         return Response({
             'mensaje': 'Visita registrada correctamente',
             'id': visita.id,
-            'qr_base64': qr_base64
+            'qr_base64': qr_base64,
+            # útil para testing en Postman y para apps que no quieran decodificar el PNG
+            'qr_payload': qr_payload,
         })
 
     except Vivienda.DoesNotExist:

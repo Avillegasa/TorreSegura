@@ -1,9 +1,12 @@
+# personal/forms.py
 from django import forms
 from django.core.exceptions import ValidationError
 from .models import Puesto, Empleado, Asignacion, ComentarioAsignacion
 from usuarios.models import Usuario, Rol
 from viviendas.models import Edificio, Vivienda
-
+import re
+from uuid import uuid4
+from datetime import date
 class PuestoForm(forms.ModelForm):
     class Meta:
         model = Puesto
@@ -295,3 +298,235 @@ class AsignacionFiltroForm(forms.Form):
                 raise ValidationError('La fecha desde no puede ser posterior a la fecha hasta.')
         
         return cleaned_data
+    
+    
+    # Agregar esta clase completa al final del archivo personal/forms.py
+class PersonalCompleteForm(forms.ModelForm):
+    """
+    Formulario combinado para que Gerentes puedan crear personal desde cero
+    Incluye campos tanto del Usuario como del Empleado
+    """
+    # Campos del Usuario
+    first_name = forms.CharField(
+        max_length=150, 
+        label="Nombres",
+        widget=forms.TextInput(attrs={'placeholder': 'Ingrese los nombres', 'class': 'form-control'}),
+        help_text="Nombres del empleado"
+    )
+    last_name = forms.CharField(
+        max_length=150, 
+        label="Apellidos",
+        widget=forms.TextInput(attrs={'placeholder': 'Ingrese los apellidos', 'class': 'form-control'}),
+        help_text="Apellidos del empleado"
+    )
+    email = forms.EmailField(
+        required=False, 
+        label="Correo Electrónico",
+        widget=forms.EmailInput(attrs={'placeholder': 'correo@gmail.com', 'class': 'form-control'}),
+        help_text="Correo electrónico (opcional)"
+    )
+    telefono = forms.CharField(
+        max_length=15, 
+        required=False, 
+        label="Teléfono",
+        widget=forms.TextInput(attrs={'placeholder': '1234567890', 'class': 'form-control'}),
+        help_text="Número de teléfono personal"
+    )
+    tipo_documento = forms.ChoiceField(
+        choices=Usuario.TIPOS_DOCUMENTO, 
+        label="Tipo de Documento",
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        initial='DNI'
+    )
+    numero_documento = forms.CharField(
+        max_length=20, 
+        required=False, 
+        label="Número de Documento",
+        widget=forms.TextInput(attrs={'placeholder': '12345678', 'class': 'form-control'}),
+        help_text="Número de cédula o documento de identidad"
+    )
+    
+    # Campos del Empleado  
+    puesto = forms.ModelChoiceField(
+        queryset=Puesto.objects.filter(activo=True),
+        label="Puesto de Trabajo",
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        help_text="Seleccione el puesto que desempeñará"
+    )
+    fecha_contratacion = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        label="Fecha de Contratación",
+        help_text="Fecha en que inicia labores",
+        initial=date.today
+    )
+    tipo_contrato = forms.ChoiceField(
+        choices=Empleado.TIPOS_CONTRATO,
+        label="Tipo de Contrato",
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        initial='PERMANENTE'
+    )
+    salario = forms.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        required=False,
+        label="Salario Mensual",
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'form-control'}),
+        help_text="Salario mensual en moneda local (opcional)"
+    )
+    contacto_emergencia = forms.CharField(
+        max_length=150, 
+        required=False,
+        label="Contacto de Emergencia",
+        widget=forms.TextInput(attrs={'placeholder': 'Nombre del familiar o contacto', 'class': 'form-control'}),
+        help_text="Persona a contactar en caso de emergencia"
+    )
+    telefono_emergencia = forms.CharField(
+        max_length=15, 
+        required=False,
+        label="Teléfono de Emergencia",
+        widget=forms.TextInput(attrs={'placeholder': '1234567890', 'class': 'form-control'}),
+        help_text="Teléfono del contacto de emergencia"
+    )
+    especialidad = forms.CharField(
+        max_length=100, 
+        required=False,
+        label="Especialidad",
+        widget=forms.TextInput(attrs={'placeholder': 'Ej: Electricidad, Plomería, etc.', 'class': 'form-control'}),
+        help_text="Especialidad o habilidades específicas (opcional)"
+    )
+
+    class Meta:
+        model = Empleado
+        fields = [
+            'puesto', 'fecha_contratacion', 'tipo_contrato', 'salario', 
+            'contacto_emergencia', 'telefono_emergencia', 'especialidad'
+        ]
+
+    def __init__(self, *args, **kwargs):
+        self.user_actual = kwargs.pop('user_actual', None)
+        super().__init__(*args, **kwargs)
+        
+        # Si el usuario es Gerente, limitar puestos a los disponibles
+        if self.user_actual and hasattr(self.user_actual, 'rol'):
+            if self.user_actual.rol.nombre == 'Gerente':
+                self.fields['puesto'].queryset = Puesto.objects.filter(activo=True).order_by('nombre')
+
+    def clean_first_name(self):
+        nombre = self.cleaned_data.get('first_name', '').strip()
+        if not re.match(r'^[A-Za-zÁÉÍÓÚáéíóúÑñ ]+$', nombre):
+            raise ValidationError("El nombre solo debe contener letras y espacios.")
+        return nombre.title()
+
+    def clean_last_name(self):
+        apellido = self.cleaned_data.get('last_name', '').strip()
+        if not re.match(r'^[A-Za-zÁÉÍÓÚáéíóúÑñ ]+$', apellido):
+            raise ValidationError("El apellido solo debe contener letras y espacios.")
+        return apellido.title()
+
+    def clean_telefono(self):
+        telefono = self.cleaned_data.get('telefono', '').strip()
+        if telefono and not telefono.isdigit():
+            raise ValidationError("El teléfono solo debe contener números.")
+        return telefono
+
+    def clean_numero_documento(self):
+        numero_documento = self.cleaned_data.get('numero_documento', '').strip()
+        if numero_documento:
+            if not numero_documento.isdigit():
+                raise ValidationError("El número de documento solo debe contener números.")
+            if len(numero_documento) < 7:
+                raise ValidationError("El número de documento debe tener al menos 7 dígitos.")
+        return numero_documento
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email', '').strip()
+        if email:
+            if not email.endswith('@gmail.com'):
+                raise ValidationError("Solo se permiten correos de Gmail (@gmail.com).")
+            if Usuario.objects.filter(email=email).exists():
+                raise ValidationError("Este correo ya está en uso.")
+        return email
+
+    def clean_fecha_contratacion(self):
+        fecha = self.cleaned_data.get('fecha_contratacion')
+        if fecha and fecha > date.today():
+            raise ValidationError("La fecha de contratación no puede estar en el futuro.")
+        return fecha
+
+    def clean_contacto_emergencia(self):
+        nombre = self.cleaned_data.get('contacto_emergencia', '').strip()
+        if nombre and not re.match(r'^[A-Za-zÁÉÍÓÚáéíóúÑñ ]+$', nombre):
+            raise ValidationError("El nombre de contacto solo debe contener letras y espacios.")
+        return nombre.title() if nombre else ''
+
+    def clean_telefono_emergencia(self):
+        tel = self.cleaned_data.get('telefono_emergencia', '').strip()
+        if tel and not tel.isdigit():
+            raise ValidationError("El teléfono de emergencia solo debe contener números.")
+        return tel
+
+    def clean_salario(self):
+        salario = self.cleaned_data.get('salario')
+        if salario is not None and salario < 0:
+            raise ValidationError("El salario no puede ser negativo.")
+        return salario
+
+    def clean(self):
+        cleaned_data = super().clean()
+        contacto_emergencia = cleaned_data.get('contacto_emergencia')
+        telefono_emergencia = cleaned_data.get('telefono_emergencia')
+
+        # Si se proporciona uno, se debe proporcionar el otro
+        if contacto_emergencia and not telefono_emergencia:
+            raise ValidationError("Si proporciona un contacto de emergencia, debe incluir el teléfono.")
+        if telefono_emergencia and not contacto_emergencia:
+            raise ValidationError("Si proporciona un teléfono de emergencia, debe incluir el nombre del contacto.")
+
+        return cleaned_data
+
+    def crear_usuario_y_empleado(self, creado_por):
+        """
+        Método para crear tanto el Usuario como el Empleado
+        """
+        # 1. Obtener el rol Personal
+        try:
+            rol_personal = Rol.objects.get(nombre='Personal')
+        except Rol.DoesNotExist:
+            raise ValidationError("No existe el rol 'Personal' en el sistema.")
+
+        # 2. Crear el Usuario
+        usuario = Usuario(
+            username=f"personal_{uuid4().hex[:6]}",
+            first_name=self.cleaned_data['first_name'],
+            last_name=self.cleaned_data['last_name'],
+            email=self.cleaned_data.get('email') or f"{uuid4().hex[:8]}@noemail.com",
+            telefono=self.cleaned_data.get('telefono', ''),
+            tipo_documento=self.cleaned_data['tipo_documento'],
+            numero_documento=self.cleaned_data.get('numero_documento', ''),
+            rol=rol_personal,
+            is_active=True
+        )
+        usuario.set_unusable_password()  # Sin acceso al sistema
+        usuario.save()
+
+        # 3. Crear el Empleado manualmente (NO usar self.save())
+        empleado = Empleado(
+            usuario=usuario,
+            puesto=self.cleaned_data['puesto'],
+            fecha_contratacion=self.cleaned_data['fecha_contratacion'],
+            tipo_contrato=self.cleaned_data['tipo_contrato'],
+            salario=self.cleaned_data.get('salario'),
+            contacto_emergencia=self.cleaned_data.get('contacto_emergencia', ''),
+            telefono_emergencia=self.cleaned_data.get('telefono_emergencia', ''),
+            especialidad=self.cleaned_data.get('especialidad', ''),
+            creado_por=creado_por,
+            activo=True
+        )
+    
+        # Si es Gerente, asignar automáticamente a su edificio
+        if creado_por.rol.nombre == 'Gerente':
+            empleado.edificio = creado_por.gerente.edificio
+    
+        empleado.save()
+    
+        return empleado

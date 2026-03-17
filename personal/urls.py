@@ -1,3 +1,4 @@
+# personal/urls.py - REEMPLAZA TODO EL CONTENIDO
 from django.urls import path
 from . import views
 
@@ -11,6 +12,8 @@ urlpatterns = [
     # Vistas de empleados
     path('empleados/', views.EmpleadoListView.as_view(), name='empleado-list'),
     path('empleados/crear/', views.EmpleadoCreateView.as_view(), name='empleado-create'),
+    # ✅ NUEVA URL: Para que Gerentes creen personal desde cero
+    path('personal/crear/', views.PersonalCreateView.as_view(), name='personal-create'),
     path('empleados/<int:pk>/', views.EmpleadoDetailView.as_view(), name='empleado-detail'),
     path('empleados/<int:pk>/editar/', views.EmpleadoUpdateView.as_view(), name='empleado-update'),
     path('empleados/<int:pk>/estado/', views.empleado_change_state, name='empleado-change-state'),
@@ -22,6 +25,6 @@ urlpatterns = [
     path('asignaciones/<int:pk>/editar/', views.AsignacionUpdateView.as_view(), name='asignacion-update'),
     path('asignaciones/<int:pk>/estado/', views.cambiar_estado_asignacion, name='cambiar-estado-asignacion'),
     
-    # ✅ CORRECCIÓN: API endpoints corregidos
+    # API endpoints
     path('api/viviendas-por-edificio/', views.viviendas_por_edificio_api, name='api-viviendas-por-edificio'),
 ]

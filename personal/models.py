@@ -1,3 +1,5 @@
+# personal/models.py
+
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -81,26 +83,28 @@ class Empleado(models.Model):
     def clean(self):
         """Validaciones personalizadas"""
         super().clean()
-        if self.usuario.rol and self.usuario.rol.nombre != "Personal":
-            raise ValidationError("Solo los usuarios con rol 'Personal' pueden ser asignados como empleados.")
+    
+        # ✅ VERIFICAR si el usuario existe antes de acceder a sus propiedades
+        if hasattr(self, 'usuario') and self.usuario is not None:
+            if hasattr(self.usuario, 'rol') and self.usuario.rol:
+                if self.usuario.rol.nombre != "Personal":
+                    raise ValidationError("Solo los usuarios con rol 'Personal' pueden ser asignados como empleados.")
 
-        
         # Validar fecha de contratación
         if self.fecha_contratacion:
             if self.fecha_contratacion > timezone.now().date():
                 raise ValidationError({'fecha_contratacion': 'La fecha de contratación no puede ser futura.'})
-        
+    
         # Validar salario
         if self.salario is not None and self.salario < 0:
             raise ValidationError({'salario': 'El salario no puede ser negativo.'})
-        
+    
         # Validar contacto de emergencia
         if self.contacto_emergencia and not self.telefono_emergencia:
             raise ValidationError({'telefono_emergencia': 'Si proporciona contacto de emergencia, debe incluir el teléfono.'})
-        
+    
         if self.telefono_emergencia and not self.contacto_emergencia:
             raise ValidationError({'contacto_emergencia': 'Si proporciona teléfono de emergencia, debe incluir el contacto.'})
-    
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)

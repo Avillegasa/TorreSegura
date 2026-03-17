@@ -87,11 +87,21 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configuración de Base de Datos
-```bash
-# Crear migraciones
-python manage.py makemigrations
+### 4. Configurar variables de entorno (.env)
+Este proyecto lee variables desde el archivo `.env` en la raíz del backend.
 
+1. Crea tu archivo `.env` desde el ejemplo:
+```bash
+# Windows (PowerShell)
+Copy-Item .env.example .env
+```
+
+2. Edita `.env` y asegúrate de definir al menos:
+- `SECRET_KEY`
+- `DEBUG=True`
+
+### 5. Configuración de Base de Datos
+```bash
 # Aplicar migraciones
 python manage.py migrate
 
@@ -99,12 +109,12 @@ python manage.py migrate
 python scripts/setup.py
 ```
 
-### 5. Crear Superusuario
+### 6. Crear Superusuario
 ```bash
 python manage.py createsuperuser
 ```
 
-### 6. Iniciar Servidor de Desarrollo
+### 7. Iniciar Servidor de Desarrollo
 ```bash
 python manage.py runserver
 ```
@@ -117,14 +127,15 @@ python manage.py runserver
 
 El script de configuración crea los siguientes usuarios de prueba:
 
-| 👤 Usuario    | 🔑 Contraseña | 🎭 Rol          | 📧 Email                    |
-|---------------|---------------|-----------------|----------------------------|
-| admin         | admin123      | Administrador   | admin@torresegura.com      |
-| vigilante     | vigilante123  | Vigilante       | vigilante@torresegura.com  |
-| gerente       | gerente123    | Gerente         | gerente@torresegura.com    |
-| carlos        | carlos123     | Residente       | carlos@torresegura.com     |
-| maria         | maria123      | Residente       | maria@torresegura.com      |
-| jorge         | jorge123      | Residente       | jorge@torresegura.com      |
+| 👤 Usuario    | 🔑 Contraseña     | 🎭 Rol          | 📧 Email                  |
+|---------------|------------------|-----------------|---------------------------|
+| admin         | admin123         | Administrador   | admin@condominio.com      |
+| vigilante     | vigilante123     | Vigilante       | vigilante@condominio.com  |
+| carlos        | carlos123        | Residente       | carlos@condominio.com     |
+| maria         | maria123         | Residente       | maria@condominio.com      |
+| jorge         | jorge123         | Residente       | jorge@condominio.com      |
+| ana           | ana123           | Residente       | ana@condominio.com        |
+| pedro         | pedro123         | Residente       | pedro@condominio.com      |
 
 > **💡 Importante**: Cambia estas contraseñas antes del despliegue en producción.
 

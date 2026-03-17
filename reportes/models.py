@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 
 class Reporte(models.Model):
     TIPO_CHOICES = [
@@ -24,6 +25,14 @@ class Reporte(models.Model):
     activo = models.BooleanField(default=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     edificio = models.ForeignKey('viviendas.Edificio', on_delete=models.SET_NULL, null=True, blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reportes_creados'
+    )
+    ultima_generacion = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.nombre

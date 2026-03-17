@@ -6,16 +6,34 @@
 {% block content %}
 <div class="mb-4 d-flex justify-content-between align-items-center">
     <div>
-        <p class="text-muted">Total: {{ visitas.count }} visitas activas</p>
+        {% if edificio_gerente %}
+            <h5 class="text-primary mb-2">
+                <i class="fas fa-building"></i> {{ edificio_gerente.nombre }}
+            </h5>
+            <p class="text-muted mb-1">Total: {{ visitas.count }} visitas activas en este edificio</p>
+        {% else %}
+            <p class="text-muted mb-1">Total: {{ visitas.count }} visitas activas (todos los edificios)</p>
+        {% endif %}
+        
         <div class="form-check form-switch">
             <input class="form-check-input" type="checkbox" id="mostrarHistorial">
-            <label class="form-check-label" for="mostrarHistorial">Mostrar historial ({{ visitas_historicas }} visitas completadas)</label>
+            <label class="form-check-label" for="mostrarHistorial">
+                Mostrar historial ({{ visitas_historicas }} visitas completadas)
+            </label>
         </div>
     </div>
     <a href="{% url 'visita-create' %}" class="btn btn-primary">
         <i class="fas fa-plus"></i> Registrar Visita
     </a>
 </div>
+
+{% if edificio_gerente %}
+<div class="alert alert-info mb-3">
+    <i class="fas fa-info-circle"></i>
+    <strong>Información:</strong> Como gerente del edificio <strong>{{ edificio_gerente.nombre }}</strong>, 
+    solo puede ver y gestionar las visitas correspondientes a este edificio.
+</div>
+{% endif %}
 
 <div class="card shadow">
     <div class="card-body">
@@ -37,12 +55,22 @@
                     {% for visita in visitas %}
                     <tr>
                         <td>{{ visita.id }}</td>
-                        <td>{{ visita.nombre_visitante }}</td>
+                        <td>
+                            <strong>{{ visita.nombre_visitante }}</strong>
+                            {% if visita.motivo %}
+                                <br><small class="text-muted">{{ visita.motivo|truncatechars:30 }}</small>
+                            {% endif %}
+                        </td>
                         <td>{{ visita.documento_visitante }}</td>
-                        <td>{{ visita.vivienda_destino }}</td>
+                        <td>
+                            <strong>{{ visita.vivienda_destino }}</strong>
+                            <br><small class="text-muted">{{ visita.vivienda_destino.edificio.nombre }}</small>
+                        </td>
                         <td>{{ visita.residente_autoriza }}</td>
                         <td>{{ visita.fecha_hora_entrada|date:"d/m/Y H:i" }}</td>
-                        <td>-</td>
+                        <td>
+                            <span class="badge bg-warning">En proceso</span>
+                        </td>
                         <td>
                             <div class="btn-group" role="group">
                                 <a href="{% url 'visita-detail' visita.id %}" class="btn btn-sm btn-info" title="Ver detalles">
@@ -58,7 +86,15 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center">No hay visitas activas</td>
+                        <td colspan="8" class="text-center py-4">
+                            <i class="fas fa-users fa-2x text-muted mb-2"></i>
+                            <br>
+                            {% if edificio_gerente %}
+                                No hay visitas activas en el edificio {{ edificio_gerente.nombre }}
+                            {% else %}
+                                No hay visitas activas
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -134,7 +170,7 @@
                             if (data.length === 0) {
                                 // Si no hay historial, mostrar mensaje
                                 const row = document.createElement('tr');
-                                row.innerHTML = '<td colspan="8" class="text-center">No hay visitas históricas</td>';
+                                row.innerHTML = '<td colspan="8" class="text-center py-4"><i class="fas fa-history fa-2x text-muted mb-2"></i><br>No hay visitas históricas</td>';
                                 visitasHistorial.appendChild(row);
                             } else {
                                 // Agregar cada visita al historial
@@ -160,13 +196,16 @@
                                     
                                     row.innerHTML = `
                                         <td>${visita.id}</td>
-                                        <td>${visita.nombre_visitante}</td>
+                                        <td>
+                                            <strong>${visita.nombre_visitante}</strong>
+                                            ${visita.motivo ? '<br><small class="text-muted">' + visita.motivo.substring(0, 30) + (visita.motivo.length > 30 ? '...' : '') + '</small>' : ''}
+                                        </td>
                                         <td>${visita.documento_visitante}</td>
                                         <td>${visita.vivienda_destino}</td>
                                         <td>${visita.residente_autoriza}</td>
                                         <td>${entradaStr}</td>
                                         <td>${salidaStr}</td>
-                                        <td><span class="badge badge-secondary">${duracion} min.</span></td>
+                                        <td><span class="badge bg-success">${duracion} min.</span></td>
                                     `;
                                     
                                     visitasHistorial.appendChild(row);

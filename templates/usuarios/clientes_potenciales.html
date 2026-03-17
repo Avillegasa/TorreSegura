@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Clientes Potenciales{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title">
+                        <i class="fas fa-users"></i> Clientes Potenciales
+                        <span class="badge badge-info ml-2">{{ total_clientes }}</span>
+                    </h3>
+                </div>
+                
+                <div class="card-body">
+                    <!-- Formulario de búsqueda -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <form method="GET" class="form-inline">
+                                <div class="input-group">
+                                    <input type="text" name="search" class="form-control" 
+                                           placeholder="Buscar por nombre, email o teléfono..." 
+                                           value="{{ search }}">
+                                    <div class="input-group-append">
+                                        <button class="btn btn-primary" type="submit">
+                                            <i class="fas fa-search"></i> Buscar
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="col-md-6 text-right">
+                            {% if search %}
+                                <a href="{% url 'clientes-potenciales-list' %}" class="btn btn-secondary">
+                                    <i class="fas fa-times"></i> Limpiar filtros
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Tabla de clientes potenciales -->
+                    {% if clientes %}
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="thead-dark">
+                                    <tr>
+                                        <th>Nombre Completo</th>
+                                        <th>Email</th>
+                                        <th>Teléfono</th>
+                                        <th>Ubicación</th>
+                                        <th>Fecha Contacto</th>
+                                        <th>Mensaje</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for cliente in clientes %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ cliente.nombre_completo }}</strong>
+                                        </td>
+                                        <td>
+                                            <a href="mailto:{{ cliente.email }}" class="text-primary">
+                                                {{ cliente.email }}
+                                            </a>
+                                        </td>
+                                        <td>
+                                            {% if cliente.telefono %}
+                                                <a href="tel:{{ cliente.telefono }}" class="text-success">
+                                                    {{ cliente.telefono }}
+                                                </a>
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if cliente.ubicacion %}
+                                                {{ cliente.ubicacion }}
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ cliente.fecha_contacto|date:"d/m/Y H:i" }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            {% if cliente.mensaje %}
+                                                <span class="d-inline-block text-truncate" style="max-width: 200px;" 
+                                                      title="{{ cliente.mensaje }}">
+                                                    {{ cliente.mensaje|truncatechars:50 }}
+                                                </span>
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <a href="mailto:{{ cliente.email }}" 
+                                                   class="btn btn-sm btn-primary" 
+                                                   title="Enviar email">
+                                                    <i class="fas fa-envelope"></i>
+                                                </a>
+                                                {% if cliente.telefono %}
+                                                    <a href="https://wa.me/{{ cliente.telefono|slice:'1:' }}" 
+                                                       target="_blank"
+                                                       class="btn btn-sm btn-success" 
+                                                       title="Contactar por WhatsApp">
+                                                        <i class="fab fa-whatsapp"></i>
+                                                    </a>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Paginación -->
+                        {% if is_paginated %}
+                            <nav aria-label="Paginación de clientes">
+                                <ul class="pagination justify-content-center">
+                                    {% if page_obj.has_previous %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page=1{% if search %}&search={{ search }}{% endif %}">
+                                                <i class="fas fa-angle-double-left"></i>
+                                            </a>
+                                        </li>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search %}&search={{ search }}{% endif %}">
+                                                <i class="fas fa-angle-left"></i>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+
+                                    <li class="page-item active">
+                                        <span class="page-link">
+                                            Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                                        </span>
+                                    </li>
+
+                                    {% if page_obj.has_next %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search %}&search={{ search }}{% endif %}">
+                                                <i class="fas fa-angle-right"></i>
+                                            </a>
+                                        </li>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search %}&search={{ search }}{% endif %}">
+                                                <i class="fas fa-angle-double-right"></i>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+                                </ul>
+                            </nav>
+                        {% endif %}
+
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                            <h4 class="text-muted">No se encontraron clientes potenciales</h4>
+                            {% if search %}
+                                <p class="text-muted">
+                                    No hay resultados para "{{ search }}"
+                                </p>
+                                <a href="{% url 'clientes-potenciales-list' %}" class="btn btn-primary">
+                                    Ver todos los clientes
+                                </a>
+                            {% else %}
+                                <p class="text-muted">
+                                    Los clientes potenciales aparecerán aquí cuando se registren desde tu sitio web.
+                                </p>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Auto-refresh cada 30 segundos para ver nuevos clientes
+    setTimeout(function() {
+        location.reload();
+    }, 30000);
+</script>
+{% endblock %}

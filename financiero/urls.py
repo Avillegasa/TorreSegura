@@ -2,6 +2,14 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Dashboard Financiero - DEBE IR PRIMERO
+    path('', views.dashboard_financiero, name='dashboard-financiero'),
+
+    # APIs para actualización asíncrona
+    path('api/cuotas-por-vivienda/<int:vivienda_id>/', views.api_cuotas_por_vivienda, name='api-cuotas-por-vivienda'),
+    path('api/resumen-financiero/', views.api_resumen_financiero, name='api-resumen-financiero'),
+    path('api/datos-chart/', views.dashboard_financiero_api, name='dashboard-financiero-api'),
+    
     # ConceptoCuota URLS
     path('conceptos/', views.ConceptoCuotaListView.as_view(), name='concepto-list'),
     path('conceptos/crear/', views.ConceptoCuotaCreateView.as_view(), name='concepto-create'),
@@ -47,10 +55,5 @@ urlpatterns = [
     path('estados-cuenta/<int:pk>/enviar/', views.enviar_estado_cuenta, name='estado-cuenta-enviar'),
     path('estados-cuenta/generar-masivos/', views.generar_estados_cuenta, name='estado-cuenta-generar-masivos'),
     
-    # Dashboard Financiero
-    path('', views.dashboard_financiero, name='dashboard-financiero'),
     
-    # APIs para actualización asíncrona
-    path('api/cuotas-por-vivienda/<int:vivienda_id>/', views.api_cuotas_por_vivienda, name='api-cuotas-por-vivienda'),
-    path('api/resumen-financiero/', views.api_resumen_financiero, name='api-resumen-financiero'),
 ]

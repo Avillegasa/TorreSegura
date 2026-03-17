@@ -81,7 +81,13 @@
                         {% endif %}
                     </div>
                     <div class="col-md-6 text-end">
-                        <p><strong>Creado por:</strong> {{ reporte.creado_por.first_name }} {{ reporte.creado_por.last_name }}</p>
+                        <p><strong>Creado por:</strong>
+                            {% if reporte.creado_por %}
+                                {{ reporte.creado_por.first_name }} {{ reporte.creado_por.last_name }}
+                            {% else %}
+                                <span class="text-muted">Administrador</span>
+                            {% endif %}
+                        </p>
                         <p><strong>Fecha de creación:</strong> {{ reporte.fecha_creacion|date:"d/m/Y H:i" }}</p>
                         <p><strong>Última generación:</strong> 
                             {% if reporte.ultima_generacion %}
@@ -239,6 +245,28 @@
                             {% endfor %}
                         </div>
                     {% endif %}
+                
+                {% elif reporte.tipo == 'FINANCIERO' %}
+                    <div class="row text-center">
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3 mb-3">
+                                <h3 class="text-success">${{ total_ingresos|floatformat:2 }}</h3>
+                                <p class="mb-0">Total Ingresos</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3 mb-3">
+                                <h3 class="text-danger">${{ total_egresos|floatformat:2 }}</h3>
+                                <p class="mb-0">Total Egresos</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3 mb-3">
+                                <h3 class="text-primary">${{ balance|floatformat:2 }}</h3>
+                                <p class="mb-0">Balance</p>
+                            </div>
+                        </div>
+                    </div>
                 {% endif %}
             </div>
         </div>
@@ -533,6 +561,38 @@
                                 {% endfor %}
                             </tbody>
                         </table>
+                        
+                    {% elif reporte.tipo == 'FINANCIERO' %}
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Concepto</th>
+                                    <th>Tipo</th>
+                                    <th>Monto</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for movimiento in movimientos|slice:":10" %}
+                                <tr>
+                                    <td>{{ movimiento.fecha|date:"d/m/Y" }}</td>
+                                    <td>{{ movimiento.concepto }}</td>
+                                    <td>
+                                        {% if movimiento.tipo == 'Ingreso' %}
+                                            <span class="badge bg-success">Ingreso</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">Egreso</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>${{ movimiento.monto|floatformat:2 }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center">No hay movimientos en este período</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     {% endif %}
                 </div>
                 
@@ -552,15 +612,19 @@
                 <h5 class="mb-0"><i class="fas fa-file-export"></i> Exportar Reporte</h5>
             </div>
             <div class="card-body">
-                <form method="post">
-                    {% csrf_token %}
-                    {{ export_form|crispy }}
-                    
-                    <div class="d-grid mt-3">
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-download"></i> Generar y Descargar
-                        </button>
+                <form method="get" action="{% url 'reporte-descargar' reporte.id %}">
+                    <div class="mb-2">
+                        <label for="formato">Formato:</label>
+                        <select name="formato" id="formato" class="form-select">
+                            <option value="PDF">PDF</option>
+                            <option value="EXCEL">Excel</option>
+                            <option value="CSV">CSV</option>
+                            <option value="HTML">HTML</option>
+                        </select>
                     </div>
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-download"></i> Descargar Reporte
+                    </button>
                 </form>
                 
                 <hr>

@@ -1,7 +1,7 @@
 # Entorno virtual
 venv/
 env/
-
+.env
 # Archivos de Python
 __pycache__/
 *.py[cod]
@@ -9,7 +9,6 @@ __pycache__/
 *.sqlite3
 
 # Archivos de configuración personales
-*.env
 *.sqlite3
 *.log
 *.pot
@@ -28,9 +27,16 @@ Thumbs.db
 
 # Archivos de base de datos local
 db.sqlite3
+db.sqlite3.bak.*
+
+# Archivos generados / uploads (no versionar)
+media/
+mediafiles/
+staticfiles/
 
 # Archivos de caché
 *.cache
 *.coverage
 *.egg-info/
 .cache/
+

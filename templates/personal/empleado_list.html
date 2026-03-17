@@ -5,6 +5,42 @@
 {% block header %}Gestión de Empleados{% endblock %}
 
 {% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2><i class="fas fa-users text-primary"></i> Lista de Empleados</h2>
+        <p class="text-muted">Gestión del personal del condominio</p>
+    </div>
+    
+    <div class="d-flex gap-2">
+        {% if request.user.rol.nombre == 'Administrador' %}
+        <a href="{% url 'empleado-create' %}" class="btn btn-outline-primary">
+            <i class="fas fa-user-plus"></i> Asignar Empleado Existente
+        </a>
+        {% endif %}
+        
+        {% if request.user.rol.nombre == 'Gerente' or request.user.rol.nombre == 'Administrador' %}
+        <a href="{% url 'personal-create' %}" class="btn btn-primary">
+            <i class="fas fa-user-tie"></i> Crear Nuevo Personal
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% if request.user.rol.nombre == 'Gerente' %}
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <h6><i class="fas fa-info-circle"></i> Información para Gerentes</h6>
+            <p class="mb-2">Como Gerente, puedes:</p>
+            <ul class="mb-0">
+                <li><strong>Crear nuevo personal:</strong> Registra empleados desde cero sin necesidad de crear usuarios previamente</li>
+                <li><strong>Gestionar empleados:</strong> El personal será asignado automáticamente a tu edificio ({{ request.user.gerente.edificio.nombre }})</li>
+                <li><strong>Asignar tareas:</strong> Crea y gestiona asignaciones de trabajo para tu personal</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endif %}
 <div class="card shadow mb-4">
     <div class="card-header py-3 d-flex justify-content-between align-items-center">
         <h6 class="m-0 font-weight-bold text-primary">Filtros</h6>
@@ -58,12 +94,6 @@
     </div>
 </div>
 
-<div class="mb-4 d-flex justify-content-between align-items-center">
-    <p class="text-muted">Total: {{ empleados.count }} empleados</p>
-    <a href="{% url 'empleado-create' %}" class="btn btn-success">
-        <i class="fas fa-user-plus"></i> Nuevo Empleado
-    </a>
-</div>
 
 <div class="card shadow">
     <div class="card-body">

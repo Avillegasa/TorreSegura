@@ -16,6 +16,15 @@
             <div class="card-body">
                 <form method="post" enctype="multipart/form-data">
                     {% csrf_token %}
+                    <div class="row">
+                        <div class="col-md-6">
+                            {{ form.rol|as_crispy_field }}
+                        </div>
+
+                        <div class="col-md-6">
+                            {{ form.telefono|as_crispy_field }}
+                        </div>
+                    </div>
                     <div class="row" id="credenciales-container-two">
                         <div class="col-md-6">
                             {% if 'username' in form.fields %}
@@ -111,17 +120,38 @@
                             </div>
                         </div>
                     </div>
-                    {% endif %}
+                    <div id="campos-credenciales-ocultos"
+                        style="position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden;">
 
-                    <div class="row">
+                        {{ form.username }}
+                        {{ form.email }}
+                        {{ form.password1 }}
+                        {{ form.password2 }}
+                    </div>
+                    <div class="row" id="credenciales-container-two">
                         <div class="col-md-6">
-                            {{ form.rol|as_crispy_field }}
+                            {% if 'username' in form.fields %}
+                            {{ form.username|as_crispy_field }}
+                            {% endif %}
                         </div>
-
                         <div class="col-md-6">
-                            {{ form.telefono|as_crispy_field }}
+                            {{ form.email|as_crispy_field }}
                         </div>
                     </div>
+                    {% endif %}
+                    <div id="campos-personal-container" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6">{{ form.puesto|as_crispy_field }}</div>
+                            <div class="col-md-6">{{ form.fecha_contratacion|as_crispy_field }}</div>
+                            <div class="col-md-6">{{ form.tipo_contrato|as_crispy_field }}</div>
+                            <div class="col-md-6">{{ form.salario|as_crispy_field }}</div>
+                            <div class="col-md-6">{{ form.contacto_emergencia|as_crispy_field }}</div>
+                            <div class="col-md-6">{{ form.telefono_emergencia|as_crispy_field }}</div>
+                            <div class="col-md-12">{{ form.especialidad|as_crispy_field }}</div>
+                        </div>
+                    </div>
+
+                    
                     <div class="row" id="edificio-container" style="display: none;">
                         <div class="col-md-12">
                             {{ form.edificio|as_crispy_field }}
@@ -166,6 +196,27 @@
 </div>
 
 <style>
+    /* Clase para ocultar pero mantener en el DOM */
+    .campo-oculto {
+        visibility: hidden !important;
+        height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        position: absolute !important;
+        left: -9999px !important;
+    }
+
+    /* Alternativa: usar opacity */
+    .campo-invisible {
+        opacity: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+
     /* Asegurar que los campos de contraseña tengan el estilo correcto */
     .input-group .form-control {
         border-right: 0;
@@ -197,6 +248,7 @@
 </style>
 
 <script>
+    // Solución 1: Remover el atributo 'required' dinámicamente
     document.addEventListener("DOMContentLoaded", function () {
         const rolField = document.getElementById("id_rol");
         const edificioContainer = document.getElementById("edificio-container");
@@ -206,20 +258,74 @@
 
         function toggleCampos() {
             const selectedRol = rolField.options[rolField.selectedIndex].text;
-
-            edificioContainer.style.display = (selectedRol === "Residente" || selectedRol === "Gerente" || selectedRol === "Vigilante") ? "block" : "none";
-            viviendaContainer.style.display = (selectedRol === "Residente") ? "block" : "none";
-            // Mostrar/ocultar username y email
+            const camposPersonalContainer = document.getElementById("campos-personal-container");
             const credencialesContainerTwo = document.getElementById("credenciales-container-two");
-            if (credencialesContainerTwo) {
-                credencialesContainerTwo.style.display = (selectedRol === "Personal") ? "none" : "flex";
+            const credencialesContainer = document.getElementById("credenciales-container");
+
+            // Campos de credenciales
+            const usernameField = document.getElementById("id_username");
+            const emailField = document.getElementById("id_email");
+            const pass1Field = document.getElementById("id_password1");
+            const pass2Field = document.getElementById("id_password2");
+
+            if (selectedRol === "Personal") {
+                // Ocultar campos
+                camposPersonalContainer.style.display = "block";
+                if (credencialesContainerTwo) credencialesContainerTwo.style.display = "none";
+                if (credencialesContainer) credencialesContainer.style.display = "none";
+
+                // CRÍTICO: Remover required y asignar valores por defecto
+                if (usernameField) {
+                    usernameField.removeAttribute('required');
+                    usernameField.value = usernameField.value || "personal_" + Math.random().toString(36).substring(2, 8);
+                }
+                if (emailField) {
+                    emailField.removeAttribute('required');
+                    emailField.value = emailField.value || "sin_email_" + Math.random().toString(36).substring(2, 6) + "@noemail.com";
+                }
+                if (pass1Field) {
+                    pass1Field.removeAttribute('required');
+                    pass1Field.value = pass1Field.value || "SinClave123!";
+                }
+                if (pass2Field) {
+                    pass2Field.removeAttribute('required');
+                    pass2Field.value = pass2Field.value || "SinClave123!";
+                }
+            } else {
+                // Mostrar campos y restaurar required
+                camposPersonalContainer.style.display = "none";
+                if (credencialesContainerTwo) credencialesContainerTwo.style.display = "flex";
+                if (credencialesContainer) credencialesContainer.style.display = "flex";
+
+                // Restaurar required para otros roles
+                if (usernameField) {
+                    usernameField.setAttribute('required', 'required');
+                    // Limpiar valores automáticos solo si empiezan con "personal_" o "sin_email_"
+                    if (usernameField.value.startsWith('personal_')) usernameField.value = '';
+                }
+                if (emailField) {
+                    emailField.setAttribute('required', 'required');
+                    if (emailField.value.startsWith('sin_email_')) emailField.value = '';
+                }
+                if (pass1Field) {
+                    pass1Field.setAttribute('required', 'required');
+                    if (pass1Field.value === 'SinClave123!') pass1Field.value = '';
+                }
+                if (pass2Field) {
+                    pass2Field.setAttribute('required', 'required');
+                    if (pass2Field.value === 'SinClave123!') pass2Field.value = '';
+                }
             }
 
-            // Mostrar/ocultar contraseñas
-            const credencialesContainer = document.getElementById("credenciales-container");
-            if (credencialesContainer) {
-                credencialesContainer.style.display = (selectedRol === "Personal") ? "none" : "flex";
-            }
+            // Lógica para edificio y vivienda
+            edificioContainer.style.display = (
+                selectedRol === "Residente" ||
+                selectedRol === "Gerente" ||
+                selectedRol === "Vigilante" ||
+                selectedRol === "Personal"
+            ) ? "block" : "none";
+
+            viviendaContainer.style.display = (selectedRol === "Residente") ? "block" : "none";
         }
 
         // Cargar viviendas según edificio seleccionado
@@ -227,10 +333,7 @@
             fetch(`/usuarios/ajax/cargar-viviendas/?edificio_id=${edificioId}`)
                 .then(response => response.json())
                 .then(data => {
-                    // Limpiar opciones actuales
                     viviendaField.innerHTML = '';
-
-                    // Agregar opciones nuevas
                     data.forEach(function (vivienda) {
                         const option = document.createElement('option');
                         option.value = vivienda.id;
@@ -253,7 +356,7 @@
             });
         }
 
-        toggleCampos(); // Ejecutar al cargar por si ya está seleccionado
+        toggleCampos(); // Ejecutar al cargar
     });
 
     function togglePassword(id, button) {
@@ -270,5 +373,7 @@
             icon.classList.add('fa-eye');
         }
     }
+
+
 </script>
 {% endblock %}

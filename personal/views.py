@@ -1,3 +1,4 @@
+# personal/views.py
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
@@ -9,14 +10,14 @@ from django.utils import timezone
 from django.http import JsonResponse
 from uuid import uuid4
 from usuarios.models import Usuario
-
+from django.contrib.auth.mixins import UserPassesTestMixin
+from .forms import PersonalCompleteForm
 from usuarios.views import AccesoWebPermitidoMixin
-from .models import Puesto, Empleado, Asignacion, ComentarioAsignacion, Vivienda
+from .models import Puesto, Empleado, Asignacion, ComentarioAsignacion
 from .forms import PuestoForm, EmpleadoForm, AsignacionForm, ComentarioAsignacionForm, AsignacionFiltroForm
-# CORRECCIÓN: Import agregado para el modelo Vivienda
 from viviendas.models import Vivienda
+from django.core.exceptions import ValidationError
 
-# Vistas para Puestos
 class PuestoListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Puesto
     template_name = 'personal/puesto_list.html'
@@ -171,7 +172,7 @@ def empleado_change_state(request, pk):
     
     # ✅ CORRECCIÓN: Verificar permisos de administrador
     if not hasattr(request.user, 'rol') or request.user.rol.nombre != 'Administrador':
-        messages.error(request, 'No tienes permisos para realizar esta acción.')
+        messages.error(request, 'No tienes permisos para realizar esta acción.', extra_tags='danger')
         return redirect('empleado-list')
     
     if request.method == 'POST':
@@ -320,7 +321,7 @@ def cambiar_estado_asignacion(request, pk):
     if not hasattr(request.user, 'rol') or request.user.rol.nombre != 'Administrador':
         # Permitir que el empleado asignado también pueda cambiar algunos estados
         if not (hasattr(request.user, 'empleado') and request.user.empleado == asignacion.empleado):
-            messages.error(request, 'No tienes permisos para cambiar el estado de esta asignación.')
+            messages.error(request, 'No tienes permisos para cambiar el estado de esta asignación.', extra_tags='danger')
             return redirect('asignacion-detail', pk=asignacion.pk)
     
     if request.method == 'POST':
@@ -371,3 +372,109 @@ def viviendas_por_edificio_api(request):
         return JsonResponse({'error': 'ID de edificio inválido'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+    
+    
+class GerenteAccesoMixin(UserPassesTestMixin):
+    """
+    Mixin para verificar que el usuario sea Gerente o Administrador
+    """
+    def test_func(self):
+        return (
+            self.request.user.is_authenticated and
+            hasattr(self.request.user, 'rol') and
+            self.request.user.rol is not None and
+            self.request.user.rol.nombre in ['Administrador', 'Gerente']
+        )
+
+    def handle_no_permission(self):
+        messages.error(self.request, "No tienes permisos para acceder a esta sección.")
+        return redirect('empleado-list')
+
+# REEMPLAZA la clase PersonalCreateView en personal/views.py
+
+class PersonalCreateView(LoginRequiredMixin, GerenteAccesoMixin, CreateView):
+    """
+    Vista específica para que Gerentes puedan crear personal desde cero
+    Combina la creación de Usuario y Empleado en una sola operación
+    """
+    model = Empleado
+    form_class = PersonalCompleteForm
+    template_name = 'personal/personal_create.html'
+    success_url = reverse_lazy('empleado-list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user_actual'] = self.request.user
+        # NO pasar 'instance' porque vamos a crear desde cero
+        if 'instance' in kwargs:
+            del kwargs['instance']
+        return kwargs
+
+    def form_valid(self, form):
+        try:
+            # Validar que el formulario sea válido antes de proceder
+            if not form.is_valid():
+                return self.form_invalid(form)
+            
+            # Usar el método del formulario para crear usuario y empleado
+            empleado = form.crear_usuario_y_empleado(creado_por=self.request.user)
+            
+            # Mensaje de éxito personalizado
+            messages.success(
+                self.request, 
+                f'Personal {empleado.usuario.first_name} {empleado.usuario.last_name} '
+                f'creado exitosamente en el puesto de {empleado.puesto.nombre}.'
+            )
+            
+            # Logging para auditoría
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"Personal creado por {self.request.user.username}: "
+                f"{empleado.usuario.first_name} {empleado.usuario.last_name} "
+                f"({empleado.puesto.nombre})"
+            )
+            
+            return redirect(self.success_url)
+            
+        except ValidationError as e:
+            messages.error(self.request, f"Error de validación: {str(e)}")
+            form.add_error(None, str(e))
+            return self.form_invalid(form)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error al crear personal: {str(e)}")
+            
+            messages.error(
+                self.request, 
+                f"Error al crear el personal: {str(e)}"
+            )
+            return self.form_invalid(form)
+
+    def form_invalid(self, form):
+        messages.error(
+            self.request, 
+            "Por favor corrige los errores en el formulario."
+        )
+        # Debug: imprimir errores en consola
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Errores del formulario: {form.errors}")
+        logger.error(f"Errores no de campo: {form.non_field_errors()}")
+        
+        return super().form_invalid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Crear Nuevo Personal'
+        context['subtitle'] = 'Registro completo de nuevo empleado'
+        
+        # Información adicional para el template
+        if self.request.user.rol.nombre == 'Gerente':
+            context['edificio_asignado'] = self.request.user.gerente.edificio
+            context['es_gerente'] = True
+        else:
+            context['es_gerente'] = False
+            
+        return context

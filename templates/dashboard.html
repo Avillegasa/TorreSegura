@@ -173,12 +173,10 @@
                             {% for asignacion in ultimas_asignaciones %}
                             <tr>
                                 <td>
-                                    <a href="{% url 'asignacion-detail' asignacion.id %}">{{
-                                        asignacion.titulo|truncatechars:30 }}</a>
+                                    <a href="{% url 'asignacion-detail' asignacion.id %}">{{ asignacion.titulo|truncatechars:30 }}</a>
                                     <div class="small text-muted">{{ asignacion.fecha_inicio|date:"d/m/Y" }}</div>
                                 </td>
-                                <td>{{ asignacion.empleado.usuario.first_name }} {{
-                                    asignacion.empleado.usuario.last_name }}</td>
+                                <td>{{ asignacion.empleado.usuario.first_name }} {{ asignacion.empleado.usuario.last_name }}</td>
                                 <td>
                                     {% if asignacion.estado == 'PENDIENTE' %}
                                     <span class="badge bg-warning text-dark">Pendiente</span>

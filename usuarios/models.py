@@ -1,16 +1,15 @@
-# Consolidación y mejoras para el modelo de Usuario con Roles, y su integración con Residente y Empleado
 # usuarios/models.py
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.exceptions import ValidationError
 from viviendas.models import Edificio
-
+from django.utils import timezone
 class Rol(models.Model):
     nombre = models.CharField(max_length=50, unique=True)
     descripcion = models.TextField(blank=True)
 
     def __str__(self):
-        return self.nombre
+        return self.nombre 
 
 class UsuarioManager(BaseUserManager):
     def create_user(self, username, email=None, password=None, **extra_fields):
@@ -99,23 +98,79 @@ class Usuario(AbstractUser):
         return self.rol and self.rol.nombre == 'Visitante'
     
 class ClientePotencial(models.Model):
-    nombre_completo = models.CharField(max_length=150)
-    telefono = models.CharField(max_length=20, blank=True)
-    email = models.EmailField()
-    ubicacion = models.CharField(max_length=255, blank=True)
-    mensaje = models.TextField(blank=True)
-    fecha_contacto = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.nombre_completo} - {self.email}"
+    """
+    Modelo para almacenar información de clientes potenciales
+    que se registran desde el sitio web público
+    """
+    nombre_completo = models.CharField(
+        max_length=200, 
+        verbose_name="Nombre Completo",
+        help_text="Nombre completo del cliente potencial"
+    )
+    telefono = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True,
+        verbose_name="Teléfono",
+        help_text="Número de teléfono del cliente"
+    )
+    email = models.EmailField(
+        verbose_name="Correo Electrónico",
+        help_text="Email de contacto del cliente"
+    )
+    ubicacion = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        verbose_name="Ubicación",
+        help_text="Ubicación aproximada del cliente"
+    )
+    mensaje = models.TextField(
+        blank=True, 
+        null=True,
+        verbose_name="Mensaje",
+        help_text="Mensaje o consulta del cliente"
+    )
+    fecha_contacto = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="Fecha de Contacto",
+        help_text="Fecha y hora en que se registró el cliente"
+    )
+    contactado = models.BooleanField(
+        default=False,
+        verbose_name="Contactado",
+        help_text="Indica si ya se contactó al cliente"
+    )
+    notas_internas = models.TextField(
+        blank=True, 
+        null=True,
+        verbose_name="Notas Internas",
+        help_text="Notas internas del equipo de ventas"
+    )
 
     class Meta:
         verbose_name = "Cliente Potencial"
         verbose_name_plural = "Clientes Potenciales"
+        ordering = ['-fecha_contacto']
+        
+        # Permisos personalizados
         permissions = [
             ("ver_cliente_potencial", "Puede ver clientes potenciales"),
+            ("contactar_cliente_potencial", "Puede contactar clientes potenciales"),
         ]
 
+    def __str__(self):
+        return f"{self.nombre_completo} - {self.email}"
+
+    @property
+    def dias_desde_contacto(self):
+        """Retorna los días transcurridos desde el primer contacto"""
+        return (timezone.now() - self.fecha_contacto).days
+
+    def marcar_como_contactado(self):
+        """Marca el cliente como contactado"""
+        self.contactado = True
+        self.save()
 class Gerente(models.Model):
     usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='gerente')
     edificio = models.ForeignKey(Edificio, on_delete=models.PROTECT, related_name='gerentes')

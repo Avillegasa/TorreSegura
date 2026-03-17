@@ -6,10 +6,43 @@ from django.contrib import messages
 from django.db.models import Count, Q, Sum
 from django.core.cache import cache
 from django.utils import timezone
+from datetime import datetime, timedelta
 from viviendas.models import Edificio, Vivienda, Residente
 from accesos.models import Visita, MovimientoResidente
 from personal.models import Empleado, Asignacion
+from usuarios.views import tiene_acceso_web
+from django.core.mail import send_mail
+from django.http import JsonResponse
+from django.conf import settings
 
+
+def test_email(request):
+    """Vista temporal para probar email en producción"""
+    try:
+        result = send_mail(
+            'Prueba de email desde Railway',
+            'Este es un email de prueba desde la aplicación en producción',
+            settings.DEFAULT_FROM_EMAIL,
+            ['apolacadilan@gmail.com'],
+            fail_silently=False
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Email enviado exitosamente. Resultado: {result}',
+            'email_backend': settings.EMAIL_BACKEND,
+            'email_host': settings.EMAIL_HOST,
+            'email_from': settings.DEFAULT_FROM_EMAIL
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'email_backend': getattr(settings, 'EMAIL_BACKEND', 'No configurado'),
+            'email_host': getattr(settings, 'EMAIL_HOST', 'No configurado'),
+        })
+    
 @login_required
 def dashboard(request):
     """
@@ -227,3 +260,4 @@ def handler500(request):
     Manejador personalizado para errores 500
     """
     return render(request, '500.html', status=500)
+

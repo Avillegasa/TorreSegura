@@ -1,99 +1,115 @@
 {% load static %}
-<nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block text-white sidebar collapse" style="background-color: #001f3f;">
+<nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block text-white sidebar collapse"
+    style="background-color: #001f3f;">
     <div class="sidebar-container">
         <!-- Header fijo del sidebar -->
         <div class="sidebar-header">
             <div class="text-center py-3">
-                <img src="{% static 'img/logo_ofi.png' %}" alt="Logo" style="height: 50px; margin-bottom: 10px;" class="d-none d-md-inline">
+                <img src="{% static 'img/logo_ofi.png' %}" alt="Logo" style="height: 50px; margin-bottom: 10px;"
+                    class="d-none d-md-inline">
                 <h6 class="fw-bold mb-0">Torre Segura</h6>
                 <small class="text-white-50 d-none d-md-block">v1.2.0</small>
             </div>
         </div>
-        
+
         <!-- Contenido scrolleable del sidebar -->
         <div class="sidebar-content">
             <!-- Búsqueda rápida -->
             <div class="px-3 mb-3 d-md-none">
                 <div class="input-group input-group-sm">
-                    <input type="text" id="sidebarSearch" class="form-control" placeholder="Buscar menú..." 
-                           style="border-radius: 15px 0 0 15px; border: 1px solid rgba(255,255,255,0.2); background-color: rgba(255,255,255,0.1); color: white;">
-                    <button class="btn btn-sm btn-outline-light" style="border-radius: 0 15px 15px 0; border: 1px solid rgba(255,255,255,0.2);">
+                    <input type="text" id="sidebarSearch" class="form-control" placeholder="Buscar menú..."
+                        style="border-radius: 15px 0 0 15px; border: 1px solid rgba(255,255,255,0.2); background-color: rgba(255,255,255,0.1); color: white;">
+                    <button class="btn btn-sm btn-outline-light"
+                        style="border-radius: 0 15px 15px 0; border: 1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-search"></i>
                     </button>
                 </div>
             </div>
-            
+
             <!-- Sección principal -->
             <div class="sidebar-section">
-                <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-2 mb-2 text-white-50">
+                <h6
+                    class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-2 mb-2 text-white-50">
                     <span><i class="fas fa-home me-2"></i>Principal</span>
-                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#principalNav" style="cursor: pointer;">
+                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#principalNav"
+                        style="cursor: pointer;">
                         <i class="fas fa-chevron-down transition-icon"></i>
                     </span>
                 </h6>
                 <ul class="nav flex-column collapse show" id="principalNav">
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if request.path == '/dashboard/' %}active{% endif %}" href="{% url 'dashboard' %}">
+                        <a class="nav-link text-white sidebar-link {% if request.path == '/dashboard/' %}active{% endif %}"
+                            href="{% url 'dashboard' %}">
                             <i class="fas fa-tachometer-alt me-2"></i>
                             <span>Dashboard</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/viviendas/' in request.path and not '/viviendas/residentes/' in request.path and not '/viviendas/edificios/' in request.path %}active{% endif %}" href="{% url 'vivienda-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/viviendas/' in request.path and not '/viviendas/residentes/' in request.path and not '/viviendas/edificios/' in request.path %}active{% endif %}"
+                            href="{% url 'vivienda-list' %}">
                             <i class="fas fa-home me-2"></i>
                             <span>Viviendas</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/viviendas/residentes/' in request.path %}active{% endif %}" href="{% url 'residente-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/viviendas/residentes/' in request.path %}active{% endif %}"
+                            href="{% url 'residente-list' %}">
                             <i class="fas fa-user-friends me-2"></i>
                             <span>Residentes</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            
+
             <!-- Sección de control de acceso -->
             <div class="sidebar-section">
-                <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
+                <h6
+                    class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
                     <span><i class="fas fa-shield-alt me-2"></i>Control de Acceso</span>
-                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#accesoNav" style="cursor: pointer;">
+                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#accesoNav"
+                        style="cursor: pointer;">
                         <i class="fas fa-chevron-down transition-icon"></i>
                     </span>
                 </h6>
                 <ul class="nav flex-column collapse show" id="accesoNav">
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/accesos/visitas/' in request.path %}active{% endif %}" href="{% url 'visita-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/accesos/visitas/' in request.path %}active{% endif %}"
+                            href="{% url 'visita-list' %}">
                             <i class="fas fa-clipboard-list me-2"></i>
                             <span>Visitas</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/accesos/movimientos/' in request.path %}active{% endif %}" href="{% url 'movimiento-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/accesos/movimientos/' in request.path %}active{% endif %}"
+                            href="{% url 'movimiento-list' %}">
                             <i class="fas fa-exchange-alt me-2"></i>
                             <span>Entradas/Salidas</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            
+
             <!-- Sección de personal -->
             <div class="sidebar-section">
-                <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
+                <h6
+                    class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
                     <span><i class="fas fa-users me-2"></i>Personal</span>
-                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#personalNav" style="cursor: pointer;">
+                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#personalNav"
+                        style="cursor: pointer;">
                         <i class="fas fa-chevron-down transition-icon"></i>
                     </span>
                 </h6>
                 <ul class="nav flex-column collapse show" id="personalNav">
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/personal/empleados/' in request.path %}active{% endif %}" href="{% url 'empleado-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/personal/empleados/' in request.path %}active{% endif %}"
+                            href="{% url 'empleado-list' %}">
                             <i class="fas fa-id-badge me-2"></i>
                             <span>Empleados</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/personal/asignaciones/' in request.path %}active{% endif %}" href="{% url 'asignacion-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/personal/asignaciones/' in request.path %}active{% endif %}"
+                            href="{% url 'asignacion-list' %}">
                             <i class="fas fa-tasks me-2"></i>
                             <span>Asignaciones</span>
                         </a>
@@ -103,39 +119,46 @@
 
             <!-- Sección financiera -->
             <div class="sidebar-section">
-                <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
+                <h6
+                    class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
                     <span><i class="fas fa-dollar-sign me-2"></i>Financiero</span>
-                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#financieroNav" style="cursor: pointer;">
+                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#financieroNav"
+                        style="cursor: pointer;">
                         <i class="fas fa-chevron-down transition-icon"></i>
                     </span>
                 </h6>
                 <ul class="nav flex-column collapse" id="financieroNav">
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/financiero/' == request.path %}active{% endif %}" href="{% url 'dashboard-financiero' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/financiero/' == request.path %}active{% endif %}"
+                            href="{% url 'dashboard-financiero' %}">
                             <i class="fas fa-chart-line me-2"></i>
                             <span>Dashboard Financiero</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/financiero/cuotas/' in request.path %}active{% endif %}" href="{% url 'cuota-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/financiero/cuotas/' in request.path %}active{% endif %}"
+                            href="{% url 'cuota-list' %}">
                             <i class="fas fa-file-invoice-dollar me-2"></i>
                             <span>Cuotas</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/financiero/pagos/' in request.path %}active{% endif %}" href="{% url 'pago-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/financiero/pagos/' in request.path %}active{% endif %}"
+                            href="{% url 'pago-list' %}">
                             <i class="fas fa-money-bill-wave me-2"></i>
                             <span>Pagos</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/financiero/gastos/' in request.path %}active{% endif %}" href="{% url 'gasto-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/financiero/gastos/' in request.path %}active{% endif %}"
+                            href="{% url 'gasto-list' %}">
                             <i class="fas fa-shopping-cart me-2"></i>
                             <span>Gastos</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/financiero/estados-cuenta/' in request.path %}active{% endif %}" href="{% url 'estado-cuenta-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/financiero/estados-cuenta/' in request.path %}active{% endif %}"
+                            href="{% url 'estado-cuenta-list' %}">
                             <i class="fas fa-shopping-cart me-2"></i>
                             <span>Estados de cuenta</span>
                         </a>
@@ -143,15 +166,18 @@
                 </ul>
             </div>
             <div class="sidebar-section">
-                <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
+                <h6
+                    class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
                     <span>Reportes</span>
-                    <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#reportesNav" style="cursor: pointer;">
+                    <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#reportesNav"
+                        style="cursor: pointer;">
                         <i class="fas fa-chevron-down"></i>
                     </span>
                 </h6>
                 <ul class="nav flex-column collapse show" id="reportesNav">
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if '/reportes/' in request.path %}active bg-primary{% endif %}" href="{% url 'reporte-list' %}">
+                        <a class="nav-link text-white {% if '/reportes/' in request.path %}active bg-primary{% endif %}"
+                            href="{% url 'reporte-list' %}">
                             <i class="fas fa-chart-bar me-2"></i> Reportes
                         </a>
                     </li>
@@ -191,52 +217,69 @@
             
             <!-- Sección de utilidades -->
             <div class="sidebar-section">
-                <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
+                <h6
+                    class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
                     <span><i class="fas fa-cog me-2"></i>Utilidades</span>
-                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#utilidadesNav" style="cursor: pointer;">
+                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#utilidadesNav"
+                        style="cursor: pointer;">
                         <i class="fas fa-chevron-down transition-icon"></i>
                     </span>
                 </h6>
                 <ul class="nav flex-column collapse" id="utilidadesNav">
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/perfil/' in request.path %}active{% endif %}" href="{% url 'perfil' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/perfil/' in request.path %}active{% endif %}"
+                            href="{% url 'perfil' %}">
                             <i class="fas fa-user-circle me-2"></i>
                             <span>Mi Perfil</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            
+
             {% if user.rol.nombre == 'Administrador' %}
             <!-- Sección de administración -->
             <div class="sidebar-section">
-                <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
+                <h6
+                    class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-2 text-white-50">
                     <span><i class="fas fa-user-shield me-2"></i>Administración</span>
-                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#adminNav" style="cursor: pointer;">
+                    <span class="d-md-none sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#adminNav"
+                        style="cursor: pointer;">
                         <i class="fas fa-chevron-down transition-icon"></i>
                     </span>
                 </h6>
                 <ul class="nav flex-column collapse" id="adminNav">
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/usuarios/' in request.path and not '/perfil/' in request.path %}active{% endif %}" href="{% url 'usuario-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/usuarios/' in request.path and not '/perfil/' in request.path %}active{% endif %}"
+                            href="{% url 'usuario-list' %}">
                             <i class="fas fa-users me-2"></i>
                             <span>Usuarios</span>
                         </a>
                     </li>
+                    <!-- En tu sidebar.html, línea 231 aproximadamente -->
+
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/usuarios/roles/' in request.path %}active{% endif %}" href="{% url 'rol-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/usuarios/clientes-potenciales/' in request.path %}active{% endif %}"
+                            href="{% url 'clientes-potenciales-list' %}">
+                            <i class="fas fa-user-plus me-2"></i> Clientes Potenciales
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white sidebar-link {% if '/usuarios/roles/' in request.path %}active{% endif %}"
+                            href="{% url 'rol-list' %}">
                             <i class="fas fa-user-tag me-2"></i>
                             <span>Roles</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/viviendas/edificios/' in request.path %}active{% endif %}" href="{% url 'edificio-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/viviendas/edificios/' in request.path %}active{% endif %}"
+                            href="{% url 'edificio-list' %}">
                             <i class="fas fa-building me-2"></i>
                             <span>Edificios</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white sidebar-link {% if '/personal/puestos/' in request.path %}active{% endif %}" href="{% url 'puesto-list' %}">
+                        <a class="nav-link text-white sidebar-link {% if '/personal/puestos/' in request.path %}active{% endif %}"
+                            href="{% url 'puesto-list' %}">
                             <i class="fas fa-briefcase me-2"></i>
                             <span>Puestos de Trabajo</span>
                         </a>
@@ -245,12 +288,14 @@
                         <div class="dropdown-divider border-top border-secondary"></div>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if '/financiero/conceptos/' in request.path %}active bg-primary{% endif %}" href="{% url 'concepto-list' %}">
+                        <a class="nav-link text-white {% if '/financiero/conceptos/' in request.path %}active bg-primary{% endif %}"
+                            href="{% url 'concepto-list' %}">
                             <i class="fas fa-tags me-2"></i> Conceptos de Cuota
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if '/financiero/categorias-gasto/' in request.path %}active bg-primary{% endif %}" href="{% url 'categoria-gasto-list' %}">
+                        <a class="nav-link text-white {% if '/financiero/categorias-gasto/' in request.path %}active bg-primary{% endif %}"
+                            href="{% url 'categoria-gasto-list' %}">
                             <i class="fas fa-list-alt me-2"></i> Categorías de Gasto
                         </a>
                     </li>
@@ -258,230 +303,16 @@
             </div>
             {% endif %}
         </div>
-        
+
         <!-- Footer fijo del sidebar -->
         <div class="sidebar-footer">
             <div class="px-3 py-2 text-center border-top border-secondary">
                 <small class="text-white-50 d-block">EQUIPO TECHFORGE</small>
-                <a href="#" class="small text-decoration-none text-white-50 hover-text-white" data-bs-toggle="modal" data-bs-target="#helpModal">
+                <a href="#" class="small text-decoration-none text-white-50 hover-text-white" data-bs-toggle="modal"
+                    data-bs-target="#helpModal">
                     <i class="fas fa-question-circle me-1"></i>Ayuda
                 </a>
             </div>
         </div>
     </div>
 </nav>
-{% comment %} {% load static %}
-<nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block text-white sidebar collapse" style="background-color: #001f3f;">
-    <div class="position-sticky pt-3">
-        <!-- Logo y título - optimizado para móviles -->
-        <div class="text-center mb-4">
-            <img src="{% static 'img/logo_ofi.png' %}" alt="Logo" style="height: 60px; margin-bottom: 10px;" class="d-none d-md-inline">
-            <h5 class="fw-bold">Torre Segura</h5>
-        </div>
-        
-        <!-- Búsqueda rápida en versión móvil -->
-        <div class="d-md-none px-3 mb-3">
-            <div class="input-group">
-                <input type="text" class="form-control" placeholder="Buscar..." style="border-radius: 20px 0 0 20px; border: 1px solid rgba(255,255,255,0.2); background-color: rgba(255,255,255,0.1); color: white;">
-                <button class="btn btn-sm btn-outline-light" style="border-radius: 0 20px 20px 0; border: 1px solid rgba(255,255,255,0.2);">
-                    <i class="fas fa-search"></i>
-                </button>
-            </div>
-        </div>
-        
-        <!-- Sección principal -->
-        <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-1 mb-1 text-white-50">
-            <span>Principal</span>
-            <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#principalNav" style="cursor: pointer;">
-                <i class="fas fa-chevron-down"></i>
-            </span>
-        </h6>
-        <ul class="nav flex-column collapse show" id="principalNav">
-            <li class="nav-item">
-                <a class="nav-link text-white {% if request.path == '/dashboard/' %}active bg-primary{% endif %}" href="{% url 'dashboard' %}">
-                    <i class="fas fa-tachometer-alt me-2"></i> Dashboard
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/viviendas/' in request.path and not '/viviendas/residentes/' in request.path and not '/viviendas/edificios/' in request.path %}active bg-primary{% endif %}" href="{% url 'vivienda-list' %}">
-                    <i class="fas fa-home me-2"></i> Viviendas
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/viviendas/residentes/' in request.path %}active bg-primary{% endif %}" href="{% url 'residente-list' %}">
-                    <i class="fas fa-user-friends me-2"></i> Residentes
-                </a>
-            </li>
-        </ul>
-        
-        <!-- Sección de control de acceso -->
-        <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
-            <span>Control de Acceso</span>
-            <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#accesoNav" style="cursor: pointer;">
-                <i class="fas fa-chevron-down"></i>
-            </span>
-        </h6>
-        <ul class="nav flex-column collapse show" id="accesoNav">
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/accesos/visitas/' in request.path %}active bg-primary{% endif %}" href="{% url 'visita-list' %}">
-                    <i class="fas fa-clipboard-list me-2"></i> Visitas
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/accesos/movimientos/' in request.path %}active bg-primary{% endif %}" href="{% url 'movimiento-list' %}">
-                    <i class="fas fa-exchange-alt me-2"></i> Entradas/Salidas
-                </a>
-            </li>
-        </ul>
-        
-        <!-- Sección de personal -->
-        <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
-            <span>Personal</span>
-            <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#personalNav" style="cursor: pointer;">
-                <i class="fas fa-chevron-down"></i>
-            </span>
-        </h6>
-        <ul class="nav flex-column collapse show" id="personalNav">
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/personal/empleados/' in request.path %}active bg-primary{% endif %}" href="{% url 'empleado-list' %}">
-                    <i class="fas fa-id-badge me-2"></i> Empleados
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/personal/asignaciones/' in request.path %}active bg-primary{% endif %}" href="{% url 'asignacion-list' %}">
-                    <i class="fas fa-tasks me-2"></i> Asignaciones
-                </a>
-            </li>
-        </ul>
-
-        <!-- Sección financiera -->
-        <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
-            <span>Financiero</span>
-            <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#financieroNav" style="cursor: pointer;">
-                <i class="fas fa-chevron-down"></i>
-            </span>
-        </h6>
-        <ul class="nav flex-column collapse show" id="financieroNav">
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/financiero/' == request.path %}active bg-primary{% endif %}" href="{% url 'dashboard-financiero' %}">
-                    <i class="fas fa-chart-line me-2"></i> Dashboard Financiero
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/financiero/cuotas/' in request.path %}active bg-primary{% endif %}" href="{% url 'cuota-list' %}">
-                    <i class="fas fa-file-invoice-dollar me-2"></i> Cuotas
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/financiero/pagos/' in request.path %}active bg-primary{% endif %}" href="{% url 'pago-list' %}">
-                    <i class="fas fa-money-bill-wave me-2"></i> Pagos
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/financiero/gastos/' in request.path %}active bg-primary{% endif %}" href="{% url 'gasto-list' %}">
-                    <i class="fas fa-shopping-cart me-2"></i> Gastos
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/financiero/estados-cuenta/' in request.path %}active bg-primary{% endif %}" href="{% url 'estado-cuenta-list' %}">
-                    <i class="fas fa-file-alt me-2"></i> Estados de Cuenta
-                </a>
-            </li>
-            
-            <!-- Enlaces de administración financiera - solo para administradores -->
-            {% if user.rol.nombre == 'Administrador' %}
-            <li class="nav-item mt-2">
-                <div class="dropdown-divider border-top border-secondary"></div>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/financiero/conceptos/' in request.path %}active bg-primary{% endif %}" href="{% url 'concepto-list' %}">
-                    <i class="fas fa-tags me-2"></i> Conceptos de Cuota
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/financiero/categorias-gasto/' in request.path %}active bg-primary{% endif %}" href="{% url 'categoria-gasto-list' %}">
-                    <i class="fas fa-list-alt me-2"></i> Categorías de Gasto
-                </a>
-            </li>
-            {% endif %}
-        </ul>
-        
-        <!-- Sección de utilidades - colapsable en móviles -->
-        <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
-            <span>Utilidades</span>
-            <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#utilidadesNav" style="cursor: pointer;">
-                <i class="fas fa-chevron-down"></i>
-            </span>
-        </h6>
-
-        <ul class="nav flex-column collapse show" id="utilidadesNav">
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/perfil/' in request.path %}active bg-primary{% endif %}" href="{% url 'perfil' %}">
-                    <i class="fas fa-user-circle me-2"></i> Mi Perfil
-                </a>
-            </li>
-        </ul>
-
-        {% if user.rol.nombre == 'Administrador' %}
-<!-- Sección de administración - colapsable en móviles -->
-<h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
-    <span>Administración</span>
-    <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#adminNav" style="cursor: pointer;">
-        <i class="fas fa-chevron-down"></i>
-    </span>
-</h6>
-<ul class="nav flex-column collapse show" id="adminNav">
-    <li class="nav-item">
-        <a class="nav-link text-white {% if '/usuarios/' in request.path and not '/perfil/' in request.path %}active bg-primary{% endif %}" href="{% url 'usuario-list' %}">
-            <i class="fas fa-users me-2"></i> Usuarios
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link text-white {% if '/usuarios/roles/' in request.path %}active bg-primary{% endif %}" href="{% url 'rol-list' %}">
-            <i class="fas fa-user-tag me-2"></i> Roles
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link text-white {% if '/viviendas/edificios/' in request.path %}active bg-primary{% endif %}" href="{% url 'edificio-list' %}">
-            <i class="fas fa-building me-2"></i> Edificios
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link text-white {% if '/personal/puestos/' in request.path %}active bg-primary{% endif %}" href="{% url 'puesto-list' %}">
-            <i class="fas fa-briefcase me-2"></i> Puestos de Trabajo
-        </a>
-    </li>
-    <li class="nav-item">
-    <a class="nav-link" href="{% url 'lista_alertas' %}">
-        <i class="fas fa-exclamation-triangle"></i>
-        <span>Alertas</span>
-    </a>
-</li>
-
-</ul>
-{% endif %}
-
-        
-        <!-- Sección de reportes -->
-        <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-3 mb-1 text-white-50">
-            <span>Reportes</span>
-            <span class="d-md-none" data-bs-toggle="collapse" data-bs-target="#reportesNav" style="cursor: pointer;">
-                <i class="fas fa-chevron-down"></i>
-            </span>
-        </h6>
-        <ul class="nav flex-column collapse show" id="reportesNav">
-            <li class="nav-item">
-                <a class="nav-link text-white {% if '/reportes/' in request.path %}active bg-primary{% endif %}" href="{% url 'reporte-list' %}">
-                    <i class="fas fa-chart-bar me-2"></i> Reportes
-                </a>
-            </li>
-        </ul>
-
-        <!-- Versión y ayuda - responsive -->
-        <div class="px-3 mt-4 mb-2 text-center d-none d-md-block">
-            <div class="small text-white-50">Versión 1.2.0</div>
-            <a href="#" class="small text-decoration-none text-white-50 hover-text-white" data-bs-toggle="modal" data-bs-target="#helpModal">Ayuda</a>
-        </div>
-        
-    </div>
-</nav> {% endcomment %}
