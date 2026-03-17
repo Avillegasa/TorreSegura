@@ -19,6 +19,9 @@ env = environ.Env(
 # Leer archivo .env si existe
 environ.Env.read_env(env_file=os.path.join(BASE_DIR, '.env')) 
 
+# Secreto dedicado para firmar QRs (opcional). Si no se define, se usa SECRET_KEY como fallback.
+QR_SECRET_KEY = env('QR_SECRET_KEY', default=None)
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -38,6 +41,10 @@ if os.environ.get('RAILWAY_PUBLIC_DOMAIN'):
     ALLOWED_HOSTS.append(os.environ.get('RAILWAY_PUBLIC_DOMAIN'))
 
 ALLOWED_HOSTS = [host for host in ALLOWED_HOSTS if host]
+
+# En desarrollo, permitir acceso por IP local/LAN (evita DisallowedHost al entrar por 192.168.x.x)
+if DEBUG and '*' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('*')
 
 # Application definition
 
@@ -166,7 +173,7 @@ WSGI_APPLICATION = 'condominio_app.wsgi.application'
 
 # ============ CONFIGURACIÓN DE BASE DE DATOS ============
 # Usar SQLite para desarrollo local si USE_LOCAL_DB=True, cambiar el valor tanto en el env como en las variables de railway
-USE_LOCAL_DB = env('USE_LOCAL_DB')
+USE_LOCAL_DB = env.bool('USE_LOCAL_DB', default=DEBUG)
 
 if USE_LOCAL_DB:
     print("🔧 Usando SQLite para desarrollo local")
@@ -178,9 +185,14 @@ if USE_LOCAL_DB:
     }
 else:
     print("🚀 Usando PostgreSQL para producción")
+    database_url = env('DATABASE_URL', default=None)
+    if not database_url:
+        raise ValueError(
+            "DATABASE_URL no está configurado. Define DATABASE_URL o activa USE_LOCAL_DB=True para usar SQLite."
+        )
     DATABASES = {
         "default": dj_database_url.config(
-            default=env('DATABASE_URL'), 
+            default=database_url,
             conn_max_age=600,
             conn_health_checks=True,
         )

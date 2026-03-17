@@ -1,4 +1,6 @@
 from django.db import models
+import secrets
+from django.utils import timezone
 from usuarios.models import Usuario
 from viviendas.models import Vivienda, Residente
 
@@ -11,6 +13,17 @@ class Visita(models.Model):
     fecha_hora_salida = models.DateTimeField(null=True, blank=True)
     motivo = models.TextField(blank=True)
     registrado_por = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True)
+
+    # Anti-replay QR
+    qr_nonce = models.CharField(max_length=32, blank=True, default='', db_index=True)
+    qr_usado = models.BooleanField(default=False)
+    qr_usado_en = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.qr_nonce:
+            # token_urlsafe() puede traer '-' y '_' (ok en QR); truncamos para tamaño fijo
+            self.qr_nonce = secrets.token_urlsafe(24)[:32]
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"{self.nombre_visitante} - {self.vivienda_destino} - {self.fecha_hora_entrada.strftime('%d/%m/%Y %H:%M')}"

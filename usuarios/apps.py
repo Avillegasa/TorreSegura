@@ -6,6 +6,9 @@ class UsuariosConfig(AppConfig):
     name = 'usuarios'
 
     def ready(self):
+        # Registrar señales (no depende de DB)
+        from . import signals  # noqa: F401
+
         from .models import Rol
         roles_definidos = [
             ("Administrador", "Rol con acceso completo al sistema."),

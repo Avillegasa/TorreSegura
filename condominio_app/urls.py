@@ -38,6 +38,9 @@ urlpatterns = [
     # ✅ API REST (corregido)
     path('api/', include('alertas.urls')),  # Ahora usa urls.py que tiene todas las rutas
 
+    # ✅ API limpia para móvil (JWT/JSON) - no afecta a la web
+    path('api/v1/', include('condominio_app.api_v1_urls')),
+
     # URLs para el restablecimiento de contraseña
     path('password-reset/', auth_views.PasswordResetView.as_view(template_name='password_reset.html'), name='password_reset'),
     path('password-reset/done/', auth_views.PasswordResetDoneView.as_view(template_name='password_reset_done.html'), name='password_reset_done'),
