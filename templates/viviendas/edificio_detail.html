@@ -36,10 +36,11 @@
                         <p class="form-control">{{ edificio.fecha_construccion|date:"d/m/Y"|default:"No especificada" }}</p>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Total de Viviendas</label>
+                        <label class="form-label">Cantidad de Viviendas (registradas al crear el edificio)</label>
                         <p class="form-control">
-                            {{ edificio.viviendas.count }} 
-                            ({{ edificio.viviendas.all|activas_count }} activas, 
+                            {{ edificio.cantidad_viviendas }}
+                            ({{ edificio.viviendas.count }} registradas,
+                            {{ edificio.viviendas.all|activas_count }} activas,
                             {{ edificio.viviendas.all|inactivas_count }} dadas de baja)
                         </p>
                     </div>

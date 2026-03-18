@@ -2,6 +2,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from usuarios.models import Rol
 from .models import Edificio, Vivienda, Residente
 
@@ -15,6 +16,7 @@ class EdificioModelTest(TestCase):
             nombre='Torre Norte',
             direccion='Av. Principal 123',
             pisos=15,
+            cantidad_viviendas=30,
             fecha_construccion='2010-05-20'
         )
     
@@ -40,6 +42,7 @@ class ViviendaModelTest(TestCase):
             nombre='Torre Sur',
             direccion='Av. Secundaria 456',
             pisos=10,
+            cantidad_viviendas=2,
             fecha_construccion='2015-08-10'
         )
         
@@ -68,6 +71,20 @@ class ViviendaModelTest(TestCase):
             fecha_baja=timezone.now().date(),
             motivo_baja='Remodelación completa'
         )
+
+    def test_no_permite_rebasar_limite_viviendas_del_edificio(self):
+        """No debe permitir registrar más viviendas que el límite del edificio"""
+        with self.assertRaises(ValidationError):
+            Vivienda.objects.create(
+                edificio=self.edificio,
+                numero='503',
+                piso=5,
+                metros_cuadrados=80,
+                habitaciones=1,
+                baños=1,
+                estado='DESOCUPADO',
+                activo=True,
+            )
     
     def test_vivienda_creation(self):
         """Verificar la creación correcta de una vivienda"""
@@ -114,6 +131,7 @@ class ResidenteModelTest(TestCase):
             nombre='Torre Este',
             direccion='Calle Este 789',
             pisos=8,
+            cantidad_viviendas=10,
             fecha_construccion='2018-03-15'
         )
         
@@ -209,6 +227,7 @@ class EdificioViewsTest(TestCase):
             nombre='Torre Oeste',
             direccion='Calle Oeste 321',
             pisos=12,
+            cantidad_viviendas=24,
             fecha_construccion='2016-11-20'
         )
         
@@ -235,6 +254,7 @@ class EdificioViewsTest(TestCase):
             'nombre': 'Torre Nueva',
             'direccion': 'Calle Nueva 123',
             'pisos': 20,
+            'cantidad_viviendas': 40,
             'fecha_construccion': '2022-01-15'
         }
         
@@ -262,6 +282,7 @@ class EdificioViewsTest(TestCase):
             'nombre': 'Torre Oeste Actualizada',
             'direccion': 'Calle Oeste 321',
             'pisos': 15,
+            'cantidad_viviendas': 24,
             'fecha_construccion': '2016-11-20'
         }
         
@@ -295,6 +316,7 @@ class ViviendaViewsTest(TestCase):
             nombre='Torre Central',
             direccion='Av. Central 789',
             pisos=20,
+            cantidad_viviendas=100,
             fecha_construccion='2019-05-10'
         )
         
@@ -397,6 +419,7 @@ class ResidenteViewsTest(TestCase):
             nombre='Torre Residencial',
             direccion='Av. Residencial 456',
             pisos=15,
+            cantidad_viviendas=50,
             fecha_construccion='2020-02-10'
         )
         
@@ -417,7 +440,9 @@ class ResidenteViewsTest(TestCase):
             email='residente@example.com',
             password='password',
             first_name='Laura',
-            last_name='Gómez'
+            last_name='Gómez',
+            numero_documento='1234567',
+            telefono='77777777'
         )
         
         # Crear residente
@@ -450,23 +475,22 @@ class ResidenteViewsTest(TestCase):
     
     def test_residente_create_view(self):
         """Verificar que se puede crear un residente"""
-        # Modificar la prueba para evitar el renderizado completo de la plantilla
-        from unittest.mock import patch
-        
-        # Crear un usuario para el nuevo residente
-        User = get_user_model()
-        nuevo_usuario = User.objects.create_user(
-            username='nuevoresidente',
-            email='nuevoresidente@example.com',
-            password='password',
-            first_name='Carlos',
-            last_name='López'
-        )
-        
-        # En lugar de verificar la respuesta GET, vayamos directamente al POST
         data = {
-            'usuario': nuevo_usuario.id,
+            # Campos del usuario (requeridos por ResidenteCreationForm)
+            'username': 'nuevoresidente',
+            'email': 'nuevoresidente@example.com',
+            'first_name': 'Carlos',
+            'last_name': 'López',
+            'telefono': '70000000',
+            'numero_documento': '7654321',
+            'password1': 'Password123!@#',
+            'password2': 'Password123!@#',
+
+            # Campos auxiliares del formulario
+            'edificio': self.edificio.id,
             'vivienda': self.vivienda.id,
+
+            # Campos del modelo Residente
             'vehiculos': 1,
             'es_propietario': False,
             'activo': True
@@ -476,17 +500,27 @@ class ResidenteViewsTest(TestCase):
         self.assertEqual(response.status_code, 302)  # Redirección
         
         # Verificar que se creó el residente
-        self.assertTrue(Residente.objects.filter(usuario=nuevo_usuario).exists())
+        self.assertTrue(Residente.objects.filter(usuario__username='nuevoresidente').exists())
 
     def test_residente_update_view(self):
         """Verificar que se puede actualizar un residente"""
-        # También modificamos esta prueba para evitar el renderizado de la plantilla
-        # e ir directamente al POST
-        
-        # Probar POST
         data = {
-            'usuario': self.usuario_residente.id,
+            # Campos del usuario (requeridos por ResidenteCreationForm en edición)
+            'username': self.usuario_residente.username,
+            'email': self.usuario_residente.email,
+            'first_name': self.usuario_residente.first_name,
+            'last_name': self.usuario_residente.last_name,
+            'telefono': self.usuario_residente.telefono,
+            'numero_documento': self.usuario_residente.numero_documento,
+            # Contraseñas opcionales en edición
+            'password1': '',
+            'password2': '',
+
+            # Campos auxiliares del formulario
+            'edificio': self.edificio.id,
             'vivienda': self.vivienda.id,
+
+            # Campos del modelo Residente
             'vehiculos': 3,  # Actualizar número de vehículos
             'es_propietario': True,
             'activo': True

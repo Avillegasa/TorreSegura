@@ -5,7 +5,7 @@ from django.views.generic import ListView, CreateView, UpdateView, DeleteView, D
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseForbidden, HttpResponseRedirect, JsonResponse
 from .models import Usuario, Rol
 from alertas.models import Alerta 
 
@@ -41,6 +41,8 @@ from django.views.decorators.http import require_http_methods
 import json
 from personal.models import Empleado
 import logging
+import re
+import unicodedata
 logger = logging.getLogger(__name__)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, DjangoModelPermissions])
@@ -217,13 +219,69 @@ def cargar_viviendas(request):
     viviendas_json = [{"id": v.id, "nombre": f"{v.numero} - Piso {v.piso}"} for v in viviendas]
     return JsonResponse(viviendas_json, safe=False)
 
+
+@login_required
+@require_http_methods(["GET"])
+def sugerir_username(request):
+    if not tiene_acceso_web(request.user):
+        return JsonResponse({'detail': 'Forbidden'}, status=403)
+
+    first_name = (request.GET.get('first_name') or '').strip()
+    last_name = (request.GET.get('last_name') or '').strip()
+
+    def _to_ascii(value: str) -> str:
+        return (
+            unicodedata.normalize('NFKD', value)
+            .encode('ascii', 'ignore')
+            .decode('ascii')
+        )
+
+    def _normalize_token(value: str) -> str:
+        value = _to_ascii(value).lower()
+        value = re.sub(r'[^a-z0-9._-]+', '', value)
+        return value
+
+    first_token = (first_name.split() or [''])[0]
+    last_token = (last_name.split() or [''])[-1]
+    base = '.'.join(filter(None, [_normalize_token(first_token), _normalize_token(last_token)]))
+    base = base.strip('._-')
+    if not base:
+        base = 'usuario'
+
+    def _candidate_for_suffix(base_value: str, suffix: str) -> str:
+        max_len = 150
+        if len(base_value) + len(suffix) > max_len:
+            base_value = base_value[: max_len - len(suffix)]
+        return f"{base_value}{suffix}".strip()
+
+    suggested = None
+    for i in range(0, 10000):
+        suffix = '' if i == 0 else str(i + 1)
+        candidate = _candidate_for_suffix(base, suffix)
+        if not candidate:
+            continue
+        if not Usuario.objects.filter(username__iexact=candidate).exists():
+            suggested = candidate
+            break
+
+    if not suggested:
+        suggested = f"{base}{uuid4().hex[:4]}"[:150]
+
+    return JsonResponse({'suggested': suggested})
+
 class AccesoWebPermitidoMixin(UserPassesTestMixin):
     def test_func(self):
         return tiene_acceso_web(self.request.user)
 
     def handle_no_permission(self):
-        messages.error(self.request, "Debe ingresar desde la aplicación móvil.",extra_tags='danger')
-        return redirect('login')  # Puedes redirigir a otra vista si lo deseas
+        # Si está autenticado pero no tiene rol permitido, devolver 403.
+        # Si no está autenticado, dejar que el flujo de autenticación redirija a login.
+        if self.request.user.is_authenticated:
+            messages.error(self.request, "No tiene permisos para acceder a esta sección.", extra_tags='danger')
+            return HttpResponseForbidden("Forbidden")
+
+        messages.error(self.request, "Debe iniciar sesión.", extra_tags='danger')
+        return redirect('login')
 
 
 class UsuarioListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):

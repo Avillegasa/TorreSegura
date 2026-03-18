@@ -32,7 +32,7 @@
                         <td>{{ edificio.nombre }}</td>
                         <td>{{ edificio.direccion|truncatechars:30 }}</td>
                         <td>{{ edificio.pisos }}</td>
-                        <td>{{ edificio.viviendas.count }}</td>
+                        <td>{{ edificio.cantidad_viviendas }}</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <a href="{% url 'edificio-detail' edificio.id %}" class="btn btn-info">

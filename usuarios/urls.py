@@ -27,6 +27,7 @@ urlpatterns = [
 
     # carga de viviendas url
     path('ajax/cargar-viviendas/', views.cargar_viviendas, name='ajax-cargar-viviendas'),
+    path('ajax/sugerir-username/', views.sugerir_username, name='ajax-sugerir-username'),
     #URLs para movil usuario
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

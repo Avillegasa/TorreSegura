@@ -4,13 +4,34 @@ from django.db.models.signals import post_save, pre_delete, post_delete
 from django.dispatch import receiver
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.utils import timezone
 
 class Edificio(models.Model):
     nombre = models.CharField(max_length=100)
     direccion = models.TextField()
     pisos = models.PositiveIntegerField()
+    cantidad_viviendas = models.PositiveIntegerField(
+        default=1,
+        validators=[MinValueValidator(1)],
+        help_text="Cantidad total de viviendas/departamentos del edificio."
+    )
     fecha_construccion = models.DateField(blank=True, null=True)
+
+    def clean(self):
+        if self.cantidad_viviendas is not None and self.cantidad_viviendas < 1:
+            raise ValidationError({'cantidad_viviendas': 'La cantidad de viviendas debe ser al menos 1.'})
+
+        if self.pk:
+            viviendas_existentes = self.viviendas.count()
+            if self.cantidad_viviendas is not None and self.cantidad_viviendas < viviendas_existentes:
+                raise ValidationError({
+                    'cantidad_viviendas': f"No puede ser menor a las viviendas ya registradas ({viviendas_existentes})."
+                })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
     
     def __str__(self):
         return self.nombre
@@ -62,6 +83,14 @@ class Vivienda(models.Model):
         if self.piso and self.edificio:
             if self.piso > self.edificio.pisos:
                 raise ValidationError(f'El piso {self.piso} excede los {self.edificio.pisos} pisos del edificio')
+
+        if self.edificio_id:
+            total_existentes = Vivienda.objects.filter(edificio_id=self.edificio_id).exclude(pk=self.pk).count()
+            limite = getattr(self.edificio, 'cantidad_viviendas', None)
+            if limite is not None and total_existentes >= limite:
+                raise ValidationError({
+                    'edificio': f"No se pueden registrar más viviendas. Límite del edificio: {limite}."
+                })
         
         # Si está inactiva, debe estar en estado BAJA
         if not self.activo and self.estado != 'BAJA':

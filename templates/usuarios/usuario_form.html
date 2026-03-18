@@ -250,11 +250,75 @@
 <script>
     // Solución 1: Remover el atributo 'required' dinámicamente
     document.addEventListener("DOMContentLoaded", function () {
+        const IS_EDITING = {% if form.instance.pk %}true{% else %}false{% endif %};
         const rolField = document.getElementById("id_rol");
         const edificioContainer = document.getElementById("edificio-container");
         const viviendaContainer = document.getElementById("vivienda-container");
         const edificioField = document.getElementById("id_edificio");
         const viviendaField = document.getElementById("id_vivienda");
+
+        const firstNameField = document.getElementById("id_first_name");
+        const lastNameField = document.getElementById("id_last_name");
+        const usernameField = document.getElementById("id_username");
+
+        let lastSuggestedUsername = "";
+        let usernameManuallyEdited = false;
+        let usernameSuggestTimer = null;
+
+        if (usernameField) {
+            usernameField.addEventListener("input", function () {
+                const current = (usernameField.value || "").trim();
+                if (!current) {
+                    usernameManuallyEdited = false;
+                    return;
+                }
+                if (lastSuggestedUsername && current !== lastSuggestedUsername) {
+                    usernameManuallyEdited = true;
+                }
+                if (!lastSuggestedUsername && current) {
+                    usernameManuallyEdited = true;
+                }
+            });
+        }
+
+        function selectedRolName() {
+            if (!rolField) return "";
+            const opt = rolField.options[rolField.selectedIndex];
+            return opt ? opt.text : "";
+        }
+
+        async function sugerirUsernameSiAplica() {
+            if (IS_EDITING) return;
+            if (!firstNameField || !lastNameField || !usernameField || !rolField) return;
+
+            const rolNombre = selectedRolName();
+            if (rolNombre === "Personal") return;
+
+            const first = (firstNameField.value || "").trim();
+            const last = (lastNameField.value || "").trim();
+            if (!first || !last) return;
+
+            const currentUsername = (usernameField.value || "").trim();
+            if (usernameManuallyEdited && currentUsername) return;
+
+            const url = `/usuarios/ajax/sugerir-username/?first_name=${encodeURIComponent(first)}&last_name=${encodeURIComponent(last)}`;
+            const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const suggested = (data && data.suggested) ? String(data.suggested) : "";
+            if (!suggested) return;
+
+            usernameField.value = suggested;
+            lastSuggestedUsername = suggested;
+            usernameManuallyEdited = false;
+        }
+
+        function programarSugerenciaUsername() {
+            if (usernameSuggestTimer) clearTimeout(usernameSuggestTimer);
+            usernameSuggestTimer = setTimeout(() => {
+                sugerirUsernameSiAplica().catch(() => { /* silencioso */ });
+            }, 300);
+        }
 
         function toggleCampos() {
             const selectedRol = rolField.options[rolField.selectedIndex].text;
@@ -263,7 +327,6 @@
             const credencialesContainer = document.getElementById("credenciales-container");
 
             // Campos de credenciales
-            const usernameField = document.getElementById("id_username");
             const emailField = document.getElementById("id_email");
             const pass1Field = document.getElementById("id_password1");
             const pass2Field = document.getElementById("id_password2");
@@ -326,6 +389,9 @@
             ) ? "block" : "none";
 
             viviendaContainer.style.display = (selectedRol === "Residente") ? "block" : "none";
+
+            // Sugerir username para roles que lo requieren
+            programarSugerenciaUsername();
         }
 
         // Cargar viviendas según edificio seleccionado
@@ -345,6 +411,10 @@
 
         // Asociar eventos
         rolField.addEventListener("change", toggleCampos);
+
+        if (firstNameField) firstNameField.addEventListener("input", programarSugerenciaUsername);
+        if (lastNameField) lastNameField.addEventListener("input", programarSugerenciaUsername);
+
         if (edificioField) {
             edificioField.addEventListener("change", function () {
                 const edificioId = this.value;
@@ -357,6 +427,7 @@
         }
 
         toggleCampos(); // Ejecutar al cargar
+        programarSugerenciaUsername();
     });
 
     function togglePassword(id, button) {

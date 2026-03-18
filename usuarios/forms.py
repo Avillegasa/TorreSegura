@@ -182,6 +182,9 @@ class UsuarioCreationForm(UserCreationForm):
             raise forms.ValidationError("El nombre de usuario no debe contener espacios.")
         if len(username) > 150:
             raise forms.ValidationError("El nombre de usuario no debe tener más de 150 caracteres.")
+
+        if Usuario.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError("Este nombre de usuario ya existe. Prueba con otro.")
         return username
 
     def clean_first_name(self):
@@ -284,6 +287,9 @@ class UsuarioEditForm(forms.ModelForm):
             raise forms.ValidationError("El nombre de usuario no debe contener espacios.")
         if len(username) > 150:
             raise forms.ValidationError("El nombre de usuario no debe tener más de 150 caracteres.")
+
+        if Usuario.objects.exclude(pk=self.instance.pk).filter(username__iexact=username).exists():
+            raise forms.ValidationError("Este nombre de usuario ya existe. Prueba con otro.")
         return username
 
     def clean_email(self):
