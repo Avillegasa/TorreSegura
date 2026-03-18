@@ -2,11 +2,13 @@
 from django import forms
 from django.core.exceptions import ValidationError
 from .models import Puesto, Empleado, Asignacion, ComentarioAsignacion
-from usuarios.models import Usuario, Rol
+from usuarios.models import Usuario, Rol, Vigilante
 from viviendas.models import Edificio, Vivienda
 import re
 from uuid import uuid4
 from datetime import date
+import secrets
+import string
 class PuestoForm(forms.ModelForm):
     class Meta:
         model = Puesto
@@ -143,10 +145,24 @@ class AsignacionForm(forms.ModelForm):
         self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
         
-        # Mostrar solo empleados activos
-        self.fields['empleado'].queryset = Empleado.objects.filter(
+        # Determinar si el usuario es Gerente con edificio asignado
+        gerente_edificio = None
+        if self.user and hasattr(self.user, 'rol') and self.user.rol and self.user.rol.nombre == 'Gerente':
+            if hasattr(self.user, 'gerente') and self.user.gerente.edificio:
+                gerente_edificio = self.user.gerente.edificio
+
+        # Mostrar solo empleados activos (filtrados por edificio para Gerente)
+        empleados_qs = Empleado.objects.filter(
             activo=True
         ).select_related('usuario', 'puesto').order_by('usuario__first_name', 'usuario__last_name')
+        if gerente_edificio:
+            empleados_qs = empleados_qs.filter(edificio=gerente_edificio)
+        self.fields['empleado'].queryset = empleados_qs
+
+        # Filtrar edificio para Gerente
+        if gerente_edificio:
+            self.fields['edificio'].queryset = Edificio.objects.filter(pk=gerente_edificio.pk)
+            self.fields['edificio'].initial = gerente_edificio
         
         # Inicialmente, mostrar todas las viviendas o filtrar por edificio en edición
         if self.instance and self.instance.pk and self.instance.edificio:
@@ -306,6 +322,19 @@ class PersonalCompleteForm(forms.ModelForm):
     Formulario combinado para que Gerentes puedan crear personal desde cero
     Incluye campos tanto del Usuario como del Empleado
     """
+    TIPO_CUENTA_CHOICES = [
+        ('PERSONAL', 'Personal (sin acceso al sistema)'),
+        ('VIGILANTE', 'Vigilante (con acceso a la app movil)'),
+    ]
+
+    tipo_cuenta = forms.ChoiceField(
+        choices=TIPO_CUENTA_CHOICES,
+        label="Tipo de Cuenta",
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        initial='PERSONAL',
+        help_text="Los vigilantes podran iniciar sesion en la aplicacion movil"
+    )
+
     # Campos del Usuario
     first_name = forms.CharField(
         max_length=150, 
@@ -346,12 +375,22 @@ class PersonalCompleteForm(forms.ModelForm):
         help_text="Número de cédula o documento de identidad"
     )
     
-    # Campos del Empleado  
+    # Campos del Empleado
     puesto = forms.ModelChoiceField(
         queryset=Puesto.objects.filter(activo=True),
         label="Puesto de Trabajo",
-        widget=forms.Select(attrs={'class': 'form-select'}),
-        help_text="Seleccione el puesto que desempeñará"
+        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_puesto'}),
+        help_text="Seleccione el puesto que desempenara"
+    )
+    otro_puesto = forms.CharField(
+        max_length=100,
+        required=False,
+        label="Especifique el puesto",
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Ej: Ascensorista, Portero, etc.',
+            'class': 'form-control',
+        }),
+        help_text="Escriba el nombre del puesto personalizado"
     )
     fecha_contratacion = forms.DateField(
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
@@ -471,6 +510,12 @@ class PersonalCompleteForm(forms.ModelForm):
             raise ValidationError("El salario no puede ser negativo.")
         return salario
 
+    def clean_otro_puesto(self):
+        otro = self.cleaned_data.get('otro_puesto', '').strip()
+        if otro and not re.match(r'^[A-Za-zÁÉÍÓÚáéíóúÑñ ]+$', otro):
+            raise ValidationError("El nombre del puesto solo debe contener letras y espacios.")
+        return otro.title() if otro else ''
+
     def clean(self):
         cleaned_data = super().clean()
         contacto_emergencia = cleaned_data.get('contacto_emergencia')
@@ -478,41 +523,93 @@ class PersonalCompleteForm(forms.ModelForm):
 
         # Si se proporciona uno, se debe proporcionar el otro
         if contacto_emergencia and not telefono_emergencia:
-            raise ValidationError("Si proporciona un contacto de emergencia, debe incluir el teléfono.")
+            raise ValidationError("Si proporciona un contacto de emergencia, debe incluir el telefono.")
         if telefono_emergencia and not contacto_emergencia:
-            raise ValidationError("Si proporciona un teléfono de emergencia, debe incluir el nombre del contacto.")
+            raise ValidationError("Si proporciona un telefono de emergencia, debe incluir el nombre del contacto.")
+
+        # Si selecciono "Otro", debe especificar el puesto
+        puesto = cleaned_data.get('puesto')
+        otro_puesto = cleaned_data.get('otro_puesto', '').strip()
+        if puesto and puesto.nombre == 'Otro' and not otro_puesto:
+            self.add_error('otro_puesto', 'Debe especificar el nombre del puesto.')
 
         return cleaned_data
 
+    def _generar_password_temporal(self, length=8):
+        """Genera una contrasena temporal segura"""
+        alphabet = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+    def _resolver_puesto(self):
+        """Si el puesto es 'Otro', crea uno nuevo con el nombre personalizado."""
+        puesto = self.cleaned_data['puesto']
+        otro_puesto = self.cleaned_data.get('otro_puesto', '').strip()
+
+        if puesto.nombre == 'Otro' and otro_puesto:
+            puesto, _ = Puesto.objects.get_or_create(
+                nombre=otro_puesto,
+                defaults={'descripcion': 'Puesto creado manualmente', 'activo': True}
+            )
+        return puesto
+
     def crear_usuario_y_empleado(self, creado_por):
         """
-        Método para crear tanto el Usuario como el Empleado
+        Crea el Usuario y el Empleado.
+        Si tipo_cuenta es VIGILANTE, tambien crea el modelo Vigilante
+        y asigna una contrasena temporal.
+        Retorna (empleado, credenciales_dict_or_None).
         """
-        # 1. Obtener el rol Personal
-        try:
-            rol_personal = Rol.objects.get(nombre='Personal')
-        except Rol.DoesNotExist:
-            raise ValidationError("No existe el rol 'Personal' en el sistema.")
+        tipo_cuenta = self.cleaned_data.get('tipo_cuenta', 'PERSONAL')
+        es_vigilante = tipo_cuenta == 'VIGILANTE'
 
-        # 2. Crear el Usuario
+        # 1. Obtener el rol correspondiente
+        nombre_rol = 'Vigilante' if es_vigilante else 'Personal'
+        try:
+            rol = Rol.objects.get(nombre=nombre_rol)
+        except Rol.DoesNotExist:
+            raise ValidationError(f"No existe el rol '{nombre_rol}' en el sistema.")
+
+        # 2. Generar username
+        prefijo = 'vigilante' if es_vigilante else 'personal'
+        username = f"{prefijo}_{uuid4().hex[:6]}"
+
+        # 3. Resolver puesto (manejar "Otro")
+        puesto = self._resolver_puesto()
+
+        # 4. Crear el Usuario
         usuario = Usuario(
-            username=f"personal_{uuid4().hex[:6]}",
+            username=username,
             first_name=self.cleaned_data['first_name'],
             last_name=self.cleaned_data['last_name'],
             email=self.cleaned_data.get('email') or f"{uuid4().hex[:8]}@noemail.com",
             telefono=self.cleaned_data.get('telefono', ''),
             tipo_documento=self.cleaned_data['tipo_documento'],
             numero_documento=self.cleaned_data.get('numero_documento', ''),
-            rol=rol_personal,
+            rol=rol,
             is_active=True
         )
-        usuario.set_unusable_password()  # Sin acceso al sistema
+
+        credenciales = None
+        if es_vigilante:
+            from django.utils import timezone
+            from datetime import timedelta
+            password_temporal = self._generar_password_temporal()
+            usuario.set_password(password_temporal)
+            usuario.debe_cambiar_password = True
+            usuario.credenciales_expiran = timezone.now() + timedelta(hours=24)
+            credenciales = {
+                'username': username,
+                'password': password_temporal,
+            }
+        else:
+            usuario.set_unusable_password()
+
         usuario.save()
 
-        # 3. Crear el Empleado manualmente (NO usar self.save())
+        # 5. Crear el Empleado
         empleado = Empleado(
             usuario=usuario,
-            puesto=self.cleaned_data['puesto'],
+            puesto=puesto,
             fecha_contratacion=self.cleaned_data['fecha_contratacion'],
             tipo_contrato=self.cleaned_data['tipo_contrato'],
             salario=self.cleaned_data.get('salario'),
@@ -522,11 +619,28 @@ class PersonalCompleteForm(forms.ModelForm):
             creado_por=creado_por,
             activo=True
         )
-    
-        # Si es Gerente, asignar automáticamente a su edificio
+
+        # Si es Gerente, asignar automaticamente a su edificio
         if creado_por.rol.nombre == 'Gerente':
             empleado.edificio = creado_por.gerente.edificio
-    
+
         empleado.save()
-    
-        return empleado
+
+        # 6. Si es Vigilante, crear el modelo Vigilante
+        if es_vigilante:
+            edificio = None
+            if creado_por.rol.nombre == 'Gerente' and hasattr(creado_por, 'gerente'):
+                edificio = creado_por.gerente.edificio
+
+            if not edificio:
+                raise ValidationError(
+                    "No se puede crear un vigilante sin edificio asignado. "
+                    "Solo los gerentes con edificio pueden crear vigilantes."
+                )
+
+            Vigilante.objects.create(
+                usuario=usuario,
+                edificio=edificio
+            )
+
+        return empleado, credenciales

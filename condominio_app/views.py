@@ -1,56 +1,42 @@
 # views.py en condominio_app que condominio app es el que tiene el archivo settings.py
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import logout
+from django.contrib.auth import logout, update_session_auth_hash
+from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth import views as auth_views
 from django.contrib import messages
 from django.db.models import Count, Q, Sum
 from django.core.cache import cache
+from django.core.mail import send_mail
+from django.conf import settings as django_settings
 from django.utils import timezone
 from datetime import datetime, timedelta
 from viviendas.models import Edificio, Vivienda, Residente
 from accesos.models import Visita, MovimientoResidente
 from personal.models import Empleado, Asignacion
 from usuarios.views import tiene_acceso_web
-from django.core.mail import send_mail
 from django.http import JsonResponse
-from django.conf import settings
+from django.core.exceptions import PermissionDenied
 
 
-def test_email(request):
-    """Vista temporal para probar email en producción"""
-    try:
-        result = send_mail(
-            'Prueba de email desde Railway',
-            'Este es un email de prueba desde la aplicación en producción',
-            settings.DEFAULT_FROM_EMAIL,
-            ['apolacadilan@gmail.com'],
-            fail_silently=False
-        )
-        
-        return JsonResponse({
-            'success': True,
-            'message': f'Email enviado exitosamente. Resultado: {result}',
-            'email_backend': settings.EMAIL_BACKEND,
-            'email_host': settings.EMAIL_HOST,
-            'email_from': settings.DEFAULT_FROM_EMAIL
-        })
-        
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e),
-            'email_backend': getattr(settings, 'EMAIL_BACKEND', 'No configurado'),
-            'email_host': getattr(settings, 'EMAIL_HOST', 'No configurado'),
-        })
-    
 @login_required
 def dashboard(request):
     """
     Vista principal del dashboard con estadísticas del condominio
     Incluye filtrado por edificio y optimizaciones de consultas
     """
-    # Obtener todos los edificios para el selector
-    edificios = Edificio.objects.all()
+    user = request.user
+    es_admin = hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Administrador'
+    es_gerente = hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente'
+    
+    if not (es_admin or es_gerente):
+        raise PermissionDenied
+    
+    # Obtener edificios según el rol
+    if es_gerente and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+        edificios = Edificio.objects.filter(id=user.gerente.edificio.id)
+    else:
+        edificios = Edificio.objects.all()
     
     # Verificar que existan edificios en el sistema
     if not edificios.exists():
@@ -62,11 +48,19 @@ def dashboard(request):
     edificio_seleccionado = None
     edificio_nombre = "Todos los edificios"
     
+    # Gerente siempre forzado a su edificio
+    if es_gerente and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+        edificio_id = str(user.gerente.edificio.id)
+    
     # Validar y procesar el edificio seleccionado
     if edificio_id:
         try:
             edificio_seleccionado = int(edificio_id)
             edificio_obj = Edificio.objects.get(id=edificio_id)
+            # Gerente no puede ver edificios que no le pertenecen
+            if es_gerente and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+                if edificio_obj.id != user.gerente.edificio.id:
+                    return redirect('dashboard')
             edificio_nombre = edificio_obj.nombre
             viviendas = Vivienda.objects.filter(edificio_id=edificio_id, activo=True)
         except (ValueError, Edificio.DoesNotExist):
@@ -81,7 +75,7 @@ def dashboard(request):
         messages.info(request, f"No hay viviendas registradas en {edificio_nombre}.")
     
     # Usar caché para estadísticas (5 minutos)
-    cache_key = f"dashboard_stats_{edificio_id or 'all'}"
+    cache_key = f"dashboard_stats_{edificio_id or 'all'}_{user.id}"
     cached_stats = cache.get(cache_key)
     
     if cached_stats is None:
@@ -142,10 +136,18 @@ def dashboard(request):
             ).count()
         
         # Estadísticas de personal
-        total_personal = Empleado.objects.filter(activo=True).count()
-        
-        # Asignaciones pendientes
-        total_asignaciones_pendientes = Asignacion.objects.filter(estado='PENDIENTE').count()
+        if edificio_id:
+            total_personal = Empleado.objects.filter(
+                activo=True,
+                edificio_id=edificio_id
+            ).count()
+            total_asignaciones_pendientes = Asignacion.objects.filter(
+                estado='PENDIENTE',
+                edificio_id=edificio_id
+            ).count()
+        else:
+            total_personal = Empleado.objects.filter(activo=True).count()
+            total_asignaciones_pendientes = Asignacion.objects.filter(estado='PENDIENTE').count()
         
         # Guardar en caché por 5 minutos
         cached_stats = {
@@ -189,9 +191,16 @@ def dashboard(request):
         ).select_related('vivienda_destino', 'vivienda_destino__edificio').order_by('-fecha_hora_entrada')[:5]
     
     # Últimas asignaciones
-    ultimas_asignaciones = Asignacion.objects.select_related(
-        'empleado__usuario', 'edificio', 'vivienda'
-    ).order_by('-fecha_asignacion')[:5]
+    if edificio_id:
+        ultimas_asignaciones = Asignacion.objects.filter(
+            edificio_id=edificio_id
+        ).select_related(
+            'empleado__usuario', 'edificio', 'vivienda'
+        ).order_by('-fecha_asignacion')[:5]
+    else:
+        ultimas_asignaciones = Asignacion.objects.select_related(
+            'empleado__usuario', 'edificio', 'vivienda'
+        ).order_by('-fecha_asignacion')[:5]
     
     # Últimos movimientos de residentes
     if edificio_id:
@@ -260,4 +269,65 @@ def handler500(request):
     Manejador personalizado para errores 500
     """
     return render(request, '500.html', status=500)
+
+
+@login_required
+def forzar_cambio_password(request):
+    """
+    Vista que obliga al residente a cambiar su contraseña temporal.
+    Al completar, limpia las flags y envía email de confirmación.
+    """
+    if not request.user.debe_cambiar_password:
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        form = PasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            user = form.save()
+            update_session_auth_hash(request, user)
+            user.debe_cambiar_password = False
+            user.credenciales_expiran = None
+            user.save(update_fields=['debe_cambiar_password', 'credenciales_expiran'])
+
+            # Enviar email de confirmación
+            try:
+                send_mail(
+                    subject='Contraseña actualizada - Torre Segura',
+                    message=(
+                        f'Hola {user.get_full_name() or user.username},\n\n'
+                        'Tu contraseña ha sido actualizada exitosamente.\n'
+                        'Ya puedes acceder al sistema con tu nueva contraseña.\n\n'
+                        'Si no realizaste este cambio, contacta al administrador de inmediato.\n\n'
+                        'Saludos,\nSistema Torre Segura'
+                    ),
+                    from_email=django_settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=True,
+                )
+            except Exception:
+                pass
+
+            messages.success(request, '¡Contraseña actualizada correctamente! Ya puedes usar el sistema.')
+            return redirect('dashboard')
+    else:
+        form = PasswordChangeForm(request.user)
+
+    return render(request, 'forzar_cambio_password.html', {'form': form})
+
+
+class CustomPasswordResetConfirmView(auth_views.PasswordResetConfirmView):
+    """
+    Extiende el reset de contraseña para limpiar las flags de
+    credenciales temporales cuando el residente cambia su contraseña.
+    """
+    template_name = 'password_reset_confirm.html'
+
+    def form_valid(self, form):
+        user = form.save()
+        # Limpiar flags de credenciales temporales
+        if getattr(user, 'debe_cambiar_password', False):
+            user.debe_cambiar_password = False
+            user.credenciales_expiran = None
+            user.save(update_fields=['debe_cambiar_password', 'credenciales_expiran'])
+        return super().form_valid(form)
 

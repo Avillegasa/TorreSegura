@@ -9,13 +9,17 @@ class PersonalConfig(AppConfig):
         try:
             from .models import Puesto
             puestos_definidos = [
-                ("Jardinero", "Encargado del mantenimiento de áreas verdes"),
-                ("Electricista", "Responsable de instalaciones eléctricas"),
-                ("Fontanero", "Responsable de instalaciones sanitarias"),
+                ("Jardinero", "Encargado del mantenimiento de areas verdes"),
+                ("Electricista", "Responsable de instalaciones electricas"),
                 ("Pintor", "Realiza trabajos de pintura"),
-                ("Otro", "Otros trabajos no clasificados")
+                ("Otro", "Puesto personalizado"),
             ]
             for nombre, descripcion in puestos_definidos:
                 Puesto.objects.get_or_create(nombre=nombre, defaults={"descripcion": descripcion})
+
+            # Desactivar puestos eliminados
+            Puesto.objects.filter(
+                nombre__in=['Auxiliar Administrativo', 'Conserje', 'Fontanero']
+            ).update(activo=False)
         except (OperationalError, ProgrammingError):
             pass

@@ -269,52 +269,16 @@
             const pass2Field = document.getElementById("id_password2");
 
             if (selectedRol === "Personal") {
-                // Ocultar campos
+                // Mostrar campos de personal (puesto, contrato, etc.)
                 camposPersonalContainer.style.display = "block";
-                if (credencialesContainerTwo) credencialesContainerTwo.style.display = "none";
-                if (credencialesContainer) credencialesContainer.style.display = "none";
-
-                // CRÍTICO: Remover required y asignar valores por defecto
-                if (usernameField) {
-                    usernameField.removeAttribute('required');
-                    usernameField.value = usernameField.value || "personal_" + Math.random().toString(36).substring(2, 8);
-                }
-                if (emailField) {
-                    emailField.removeAttribute('required');
-                    emailField.value = emailField.value || "sin_email_" + Math.random().toString(36).substring(2, 6) + "@noemail.com";
-                }
-                if (pass1Field) {
-                    pass1Field.removeAttribute('required');
-                    pass1Field.value = pass1Field.value || "SinClave123!";
-                }
-                if (pass2Field) {
-                    pass2Field.removeAttribute('required');
-                    pass2Field.value = pass2Field.value || "SinClave123!";
-                }
+                // Mantener credenciales visibles para acceso móvil
+                if (credencialesContainerTwo) credencialesContainerTwo.style.display = "flex";
+                if (credencialesContainer) credencialesContainer.style.display = "flex";
             } else {
-                // Mostrar campos y restaurar required
+                // Ocultar campos de personal
                 camposPersonalContainer.style.display = "none";
                 if (credencialesContainerTwo) credencialesContainerTwo.style.display = "flex";
                 if (credencialesContainer) credencialesContainer.style.display = "flex";
-
-                // Restaurar required para otros roles
-                if (usernameField) {
-                    usernameField.setAttribute('required', 'required');
-                    // Limpiar valores automáticos solo si empiezan con "personal_" o "sin_email_"
-                    if (usernameField.value.startsWith('personal_')) usernameField.value = '';
-                }
-                if (emailField) {
-                    emailField.setAttribute('required', 'required');
-                    if (emailField.value.startsWith('sin_email_')) emailField.value = '';
-                }
-                if (pass1Field) {
-                    pass1Field.setAttribute('required', 'required');
-                    if (pass1Field.value === 'SinClave123!') pass1Field.value = '';
-                }
-                if (pass2Field) {
-                    pass2Field.setAttribute('required', 'required');
-                    if (pass2Field.value === 'SinClave123!') pass2Field.value = '';
-                }
             }
 
             // Lógica para edificio y vivienda

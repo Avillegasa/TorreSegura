@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Credenciales del Vigilante{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card shadow border-warning mt-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-key"></i> Credenciales del Vigilante
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if credenciales.email_enviado %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-envelope-open-text"></i>
+                        Las credenciales fueron enviadas al correo del vigilante.
+                    </div>
+                    {% endif %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Importante:</strong> Estas credenciales solo se mostraran una vez.
+                        Asegurese de anotarlas o compartirlas con el vigilante antes de salir de esta pagina.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Nombre:</label>
+                        <p class="form-control-plaintext fs-5">{{ credenciales.nombre }}</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Usuario:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control fs-5 bg-light"
+                                   value="{{ credenciales.username }}" readonly id="username-field">
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="copiarTexto('username-field')">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Contrasena temporal:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control fs-5 bg-light"
+                                   value="{{ credenciales.password }}" readonly id="password-field">
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="copiarTexto('password-field')">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">El vigilante debera cambiar esta contrasena en su primer inicio de sesion.</div>
+                    </div>
+
+                    <hr>
+                    <div class="d-flex justify-content-end">
+                        <a href="{% url 'empleado-list' %}" class="btn btn-primary">
+                            <i class="fas fa-check"></i> Entendido, volver a la lista
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function copiarTexto(elementId) {
+    var field = document.getElementById(elementId);
+    field.select();
+    field.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(field.value).then(function() {
+        // Cambiar icono temporalmente
+        var btn = field.nextElementSibling;
+        var originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check text-success"></i>';
+        setTimeout(function() {
+            btn.innerHTML = originalHtml;
+        }, 1500);
+    });
+}
+</script>
+{% endblock %}

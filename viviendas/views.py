@@ -2,20 +2,45 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, View
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.utils import timezone
+from django.db.models import Q
 from usuarios.views import AccesoWebPermitidoMixin
 from .models import Edificio, Vivienda, Residente
 from .forms import EdificioForm, ViviendaForm, ViviendaBajaForm, ResidenteCreationForm
+
+
+class AdministradorSoloMixin(UserPassesTestMixin):
+    def test_func(self):
+        return (
+            self.request.user.is_authenticated and
+            hasattr(self.request.user, 'rol') and
+            self.request.user.rol is not None and
+            self.request.user.rol.nombre == 'Administrador'
+        )
+
+    def handle_no_permission(self):
+        messages.error(self.request, "Solo los administradores pueden gestionar edificios.", extra_tags='danger')
+        return redirect('edificio-list')
+
+
 # Vistas de Edificios
-class EdificioListView(LoginRequiredMixin, ListView):
+class EdificioListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Edificio
     template_name = 'viviendas/edificio_list.html'
     context_object_name = 'edificios'
 
-class EdificioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        # Gerente solo ve su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(pk=user.gerente.edificio.pk)
+        return queryset
+
+class EdificioCreateView(LoginRequiredMixin, AdministradorSoloMixin, CreateView):
     model = Edificio
     form_class = EdificioForm
     template_name = 'viviendas/edificio_form.html'
@@ -25,7 +50,7 @@ class EdificioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView
         messages.success(self.request, 'Edificio creado exitosamente.')
         return super().form_valid(form)
 
-class EdificioUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
+class EdificioUpdateView(LoginRequiredMixin, AdministradorSoloMixin, UpdateView):
     model = Edificio
     form_class = EdificioForm
     template_name = 'viviendas/edificio_form.html'
@@ -35,7 +60,7 @@ class EdificioUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView
         messages.success(self.request, 'Edificio actualizado exitosamente.')
         return super().form_valid(form)
 
-class EdificioDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
+class EdificioDeleteView(LoginRequiredMixin, AdministradorSoloMixin, DeleteView):
     model = Edificio
     template_name = 'viviendas/edificio_confirm_delete.html'
     success_url = reverse_lazy('edificio-list')
@@ -44,13 +69,20 @@ class EdificioDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView
         messages.success(request, 'Edificio eliminado exitosamente.')
         return super().delete(request, *args, **kwargs)
 
-class EdificioDetailView(LoginRequiredMixin, DetailView):
+class EdificioDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Edificio
     template_name = 'viviendas/edificio_detail.html'
     context_object_name = 'edificio'
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(pk=user.gerente.edificio.pk)
+        return queryset
+
 # Vistas de Viviendas
-class ViviendaListView(LoginRequiredMixin, ListView):
+class ViviendaListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Vivienda
     template_name = 'viviendas/vivienda_list.html'
     context_object_name = 'viviendas'
@@ -138,6 +170,13 @@ class ViviendaUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView
     template_name = 'viviendas/vivienda_form.html'
     success_url = reverse_lazy('vivienda-list')
     
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+        return queryset
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user_actual'] = self.request.user
@@ -147,7 +186,7 @@ class ViviendaUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView
         messages.success(self.request, 'Vivienda actualizada exitosamente.')
         return super().form_valid(form)
 
-class ViviendaDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
+class ViviendaDeleteView(LoginRequiredMixin, AdministradorSoloMixin, DeleteView):
     model = Vivienda
     template_name = 'viviendas/vivienda_confirm_delete.html'
     success_url = reverse_lazy('vivienda-list')
@@ -156,10 +195,17 @@ class ViviendaDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView
         messages.success(request, 'Vivienda eliminada exitosamente.')
         return super().delete(request, *args, **kwargs)
 
-class ViviendaDetailView(LoginRequiredMixin, DetailView):
+class ViviendaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Vivienda
     template_name = 'viviendas/vivienda_detail.html'
     context_object_name = 'vivienda'
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -183,7 +229,7 @@ class ViviendaDetailView(LoginRequiredMixin, DetailView):
         return context
 
 # Vistas de Residentes - VERSIÓN CORREGIDA
-class ResidenteListView(LoginRequiredMixin, ListView):
+class ResidenteListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Residente
     template_name = 'viviendas/residente_list.html'
     context_object_name = 'residentes'
@@ -311,8 +357,79 @@ class ResidenteCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateVie
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        messages.success(self.request, "Residente creado correctamente.")
+
+        # Enviar email con credenciales temporales
+        password_temporal = getattr(form, '_password_temporal', None)
+        if password_temporal:
+            residente = self.object
+            usuario = residente.usuario
+
+            # Auto-verificar email en allauth (el admin lo proporcionó)
+            from allauth.account.models import EmailAddress
+            EmailAddress.objects.get_or_create(
+                user=usuario,
+                email=usuario.email,
+                defaults={'primary': True, 'verified': True}
+            )
+
+            self._enviar_email_credenciales(usuario, password_temporal)
+            messages.success(
+                self.request,
+                f"Residente creado. Se enviaron las credenciales temporales a {usuario.email} (válidas por 24 horas)."
+            )
+        else:
+            messages.success(self.request, "Residente creado correctamente.")
+
         return response
+
+    def _enviar_email_credenciales(self, usuario, password_temporal):
+        """Envía el email con las credenciales temporales al residente"""
+        from django.core.mail import send_mail
+        from django.conf import settings
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+
+        # Generar link de cambio de contraseña (no requiere login web)
+        uid = urlsafe_base64_encode(force_bytes(usuario.pk))
+        token = default_token_generator.make_token(usuario)
+        reset_url = self.request.build_absolute_uri(
+            f'/password-reset/{uid}/{token}/'
+        )
+
+        asunto = 'Torre Segura - Credenciales de acceso'
+        mensaje = (
+            f'Hola {usuario.first_name} {usuario.last_name},\n\n'
+            f'Se ha creado tu cuenta en Torre Segura.\n\n'
+            f'Tus credenciales temporales para la aplicación móvil son:\n'
+            f'  Usuario: {usuario.username}\n'
+            f'  Contraseña: {password_temporal}\n\n'
+            f'PASOS PARA ACTIVAR TU CUENTA:\n'
+            f'1. Abre la aplicación móvil Torre Segura\n'
+            f'2. Inicia sesión con las credenciales de arriba\n'
+            f'3. La app te indicará que cambies tu contraseña\n'
+            f'4. Haz clic en el siguiente enlace para crear tu contraseña definitiva:\n\n'
+            f'   {reset_url}\n\n'
+            f'5. Una vez cambiada, vuelve a la app e inicia sesión con tu nueva contraseña\n\n'
+            f'IMPORTANTE: Estas credenciales temporales son válidas por 24 horas.\n\n'
+            f'Saludos,\n'
+            f'Equipo Torre Segura'
+        )
+
+        try:
+            send_mail(
+                asunto,
+                mensaje,
+                settings.DEFAULT_FROM_EMAIL,
+                [usuario.email],
+                fail_silently=False,
+            )
+        except Exception:
+            messages.warning(
+                self.request,
+                f'No se pudo enviar el email a {usuario.email}. '
+                f'Credenciales: usuario={usuario.username}, contraseña={password_temporal}'
+            )
 
     def form_invalid(self, form):
         messages.error(self.request, "Por favor corrige los errores en el formulario.")
@@ -330,6 +447,13 @@ class ResidenteUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateVie
     template_name = 'viviendas/residente_form.html'
     success_url = reverse_lazy('residente-list')
     
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user_actual'] = self.request.user
@@ -339,7 +463,7 @@ class ResidenteUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateVie
         messages.success(self.request, 'Residente actualizado exitosamente.')
         return super().form_valid(form)
 
-class ResidenteDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
+class ResidenteDeleteView(LoginRequiredMixin, AdministradorSoloMixin, DeleteView):
     model = Residente
     template_name = 'viviendas/residente_confirm_delete.html'
     success_url = reverse_lazy('residente-list')
@@ -348,10 +472,17 @@ class ResidenteDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteVie
         messages.success(request, 'Residente eliminado exitosamente.')
         return super().delete(request, *args, **kwargs)
 
-class ResidenteDetailView(LoginRequiredMixin, DetailView):
+class ResidenteDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Residente
     template_name = 'viviendas/residente_detail.html'
     context_object_name = 'residente'
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
 
 class ViviendaBajaView(LoginRequiredMixin, AccesoWebPermitidoMixin, View):
     """
@@ -362,6 +493,13 @@ class ViviendaBajaView(LoginRequiredMixin, AccesoWebPermitidoMixin, View):
     
     def get(self, request, pk):
         vivienda = get_object_or_404(Vivienda, pk=pk)
+        
+        # Gerente solo puede dar de baja viviendas de su edificio
+        user = request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            if vivienda.edificio != user.gerente.edificio:
+                from django.core.exceptions import PermissionDenied
+                raise PermissionDenied
         
         # Verificar si tiene residentes activos
         residentes_activos = vivienda.residentes.filter(activo=True).count()

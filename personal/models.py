@@ -87,8 +87,8 @@ class Empleado(models.Model):
         # ✅ VERIFICAR si el usuario existe antes de acceder a sus propiedades
         if hasattr(self, 'usuario') and self.usuario is not None:
             if hasattr(self.usuario, 'rol') and self.usuario.rol:
-                if self.usuario.rol.nombre != "Personal":
-                    raise ValidationError("Solo los usuarios con rol 'Personal' pueden ser asignados como empleados.")
+                if self.usuario.rol.nombre not in ('Personal', 'Vigilante'):
+                    raise ValidationError("Solo los usuarios con rol 'Personal' o 'Vigilante' pueden ser asignados como empleados.")
 
         # Validar fecha de contratación
         if self.fecha_contratacion:

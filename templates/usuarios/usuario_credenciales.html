@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block title %}Credenciales de Usuario | Sistema de Administración de Condominios{% endblock %}
+
+{% block header %}Credenciales de Acceso Móvil{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 mx-auto">
+        <div class="card shadow border-success" id="credenciales-card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Usuario Creado Exitosamente</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Importante:</strong> Estas credenciales se muestran solo una vez. Anótelas o imprima esta página.
+                </div>
+
+                <table class="table table-bordered">
+                    <tbody>
+                        <tr>
+                            <th class="bg-light" style="width: 40%;">Nombre completo</th>
+                            <td>{{ credenciales.nombre_completo }}</td>
+                        </tr>
+                        <tr>
+                            <th class="bg-light">Rol</th>
+                            <td>{{ credenciales.rol }}</td>
+                        </tr>
+                        {% if credenciales.puesto %}
+                        <tr>
+                            <th class="bg-light">Puesto</th>
+                            <td>{{ credenciales.puesto }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <th class="bg-light">Usuario</th>
+                            <td><code>{{ credenciales.username }}</code></td>
+                        </tr>
+                        <tr>
+                            <th class="bg-light">Contraseña</th>
+                            <td><code>{{ credenciales.password }}</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button onclick="window.print()" class="btn btn-outline-primary">
+                        <i class="fas fa-print me-1"></i> Imprimir
+                    </button>
+                    <a href="{% url 'usuario-list' %}" class="btn btn-primary">
+                        <i class="fas fa-arrow-left me-1"></i> Volver a Usuarios
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@media print {
+    .sidebar, .navbar, .btn, footer { display: none !important; }
+    #credenciales-card { border: 2px solid #000 !important; }
+}
+</style>
+{% endblock %}

@@ -138,13 +138,17 @@ class VisitaDetailView(LoginRequiredMixin, BaseGerenteMixin, DetailView):
 
 @login_required
 def registrar_salida_visita(request, pk):
+    if request.method != 'POST':
+        return redirect('visita-list')
+
     visita = get_object_or_404(Visita, pk=pk)
     
-    # Validar permisos para gerente
+    # Validar permisos
     user = request.user
-    if not user.is_superuser and not user.groups.filter(name='Administrador').exists():
-        if user.groups.filter(name='Gerente').exists():
+    if not user.is_superuser and not (hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Administrador'):
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente':
             try:
+                from usuarios.models import Gerente
                 gerente_edificio = Gerente.objects.get(usuario=user)
                 if visita.vivienda_destino.edificio != gerente_edificio.edificio:
                     raise PermissionDenied("No tiene permisos para registrar la salida de esta visita")

@@ -95,9 +95,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         } else {
-            // En desktop: mostrar todas las secciones principales
+            // En desktop: mostrar las primeras 3 secciones y cualquiera con enlace activo
             document.querySelectorAll('.sidebar-section .collapse').forEach((collapse, index) => {
-                if (index < 3) { // Mostrar las primeras 3 secciones (Principal, Acceso, Personal)
+                const hasActive = collapse.querySelector('.sidebar-link.active');
+                if (index < 3 || hasActive) {
                     collapse.classList.add('show');
                 }
             });
@@ -162,9 +163,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }, 300);
             }
-            
-            // Guardar selección en localStorage
-            localStorage.setItem('activeNavLink', this.getAttribute('href'));
         });
     });
     
@@ -174,28 +172,43 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function restoreActiveState() {
         const currentPath = window.location.pathname;
-        const savedPath = localStorage.getItem('activeNavLink');
-        
-        // Primero intentar con la URL actual
-        let activeLink = Array.from(sidebarLinks).find(link => {
-            const href = link.getAttribute('href');
-            return href && currentPath.startsWith(href) && href !== '/';
-        });
-        
-        // Si no se encuentra, usar la guardada en localStorage
-        if (!activeLink && savedPath) {
-            activeLink = document.querySelector(`a[href="${savedPath}"]`);
+
+        // Check if the server already rendered an active link correctly
+        const serverActive = document.querySelector('.sidebar-link.active');
+        if (serverActive) {
+            const href = serverActive.getAttribute('href');
+            if (href && currentPath.startsWith(href)) {
+                // Server-side active is correct — just expand its section
+                const section = serverActive.closest('.sidebar-section');
+                const collapse = section?.querySelector('.collapse');
+                if (collapse) {
+                    collapse.classList.add('show');
+                }
+                return;
+            }
         }
-        
-        // Aplicar estado activo
+
+        // Find the most specific (longest) matching href
+        let activeLink = null;
+        let longestMatch = 0;
+
+        sidebarLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            if (href && href !== '/' && currentPath.startsWith(href) && href.length > longestMatch) {
+                longestMatch = href.length;
+                activeLink = link;
+            }
+        });
+
+        // Apply active state
         if (activeLink) {
             sidebarLinks.forEach(l => l.classList.remove('active'));
             activeLink.classList.add('active');
-            
-            // Expandir la sección que contiene el enlace activo
+
+            // Expand the section containing the active link
             const section = activeLink.closest('.sidebar-section');
             const collapse = section?.querySelector('.collapse');
-            if (collapse && window.innerWidth < 768) {
+            if (collapse) {
                 collapse.classList.add('show');
             }
         }
@@ -253,9 +266,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 toggle.style.display = 'none';
             });
             
-            // Mostrar secciones principales
+            // Mostrar secciones principales y cualquier sección con enlace activo
             document.querySelectorAll('.sidebar-section .collapse').forEach((collapse, index) => {
-                if (index < 3) {
+                const hasActive = collapse.querySelector('.sidebar-link.active');
+                if (index < 3 || hasActive) {
                     collapse.classList.add('show');
                 }
             });
@@ -395,9 +409,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Prevenir cierre accidental en móvil
-    sidebar.addEventListener('touchmove', function(e) {
-        e.stopPropagation();
-    });
+    if (sidebar) {
+        sidebar.addEventListener('touchmove', function(e) {
+            e.stopPropagation();
+        });
+    }
     
     // ==========================================
     // UTILIDADES

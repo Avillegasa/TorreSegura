@@ -3,7 +3,6 @@ from pathlib import Path
 from datetime import timedelta
 import environ
 import socket
-import dj_database_url
 
 hostname = socket.gethostname()
 
@@ -12,8 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Configuración de environ con valores por defecto
 env = environ.Env(
     DEBUG=(bool, False),
-    SECRET_KEY=(str, '&ix4!j6wldiurc6q^-c0y^pv91^3v-plu=x!mv3@x9-tv5gy3_'),
-    USE_LOCAL_DB=(bool, False),  # Nueva variable para controlar la DB
+    USE_LOCAL_DB=(bool, False),
 )
 
 # Leer archivo .env si existe
@@ -82,15 +80,16 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Debe ser el primero
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware', # Middleware para servir archivos estáticos
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',  # Middleware de AllAuth 
+    'condominio_app.middleware.force_password_change.ForcePasswordChangeMiddleware',
 ]
 
 ROOT_URLCONF = 'condominio_app.urls'
@@ -176,7 +175,7 @@ WSGI_APPLICATION = 'condominio_app.wsgi.application'
 USE_LOCAL_DB = env.bool('USE_LOCAL_DB', default=DEBUG)
 
 if USE_LOCAL_DB:
-    print("🔧 Usando SQLite para desarrollo local")
+    print("Usando SQLite para desarrollo local")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -184,7 +183,8 @@ if USE_LOCAL_DB:
         }
     }
 else:
-    print("🚀 Usando PostgreSQL para producción")
+    import dj_database_url
+    print("Usando PostgreSQL para produccion")
     database_url = env('DATABASE_URL', default=None)
     if not database_url:
         raise ValueError(
@@ -256,7 +256,6 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -264,6 +263,16 @@ REST_FRAMEWORK = {
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/minute',
+        'user': '120/minute',
+    },
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 50,
 }
 
 # Security settings for production
@@ -322,6 +331,7 @@ ACCOUNT_SIGNUP_PASSWORD_ENTER_TWICE = True
 ACCOUNT_SESSION_REMEMBER = True
 ACCOUNT_AUTHENTICATION_METHOD = 'username_email'
 ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_LOGIN_ON_GET = False
 
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 
@@ -357,6 +367,7 @@ SOCIALACCOUNT_PROVIDERS = {
 SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
 SOCIALACCOUNT_AUTO_SIGNUP = True
 SOCIALACCOUNT_ADAPTER = 'usuarios.adapters.CustomSocialAccountAdapter'
+ACCOUNT_ADAPTER = 'usuarios.adapters.CustomAccountAdapter'
 
 # Credenciales Google opcionales (evitar hardcodear valores)
 GOOGLE_CLIENT_ID = env('GOOGLE_CLIENT_ID', default='')

@@ -8,19 +8,35 @@ class RolSerializer(serializers.ModelSerializer):
 
 class UsuarioSerializer(serializers.ModelSerializer):
     rol = RolSerializer(read_only=True)
-    vivienda_id = serializers.SerializerMethodField() 
+    vivienda_id = serializers.SerializerMethodField()
+    edificio_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Usuario
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'rol', 'telefono', 'tipo_documento', 'numero_documento',
-            'foto', 'vivienda_id' 
+            'foto', 'vivienda_id', 'edificio_id', 'debe_cambiar_password'
         ]
 
     def get_vivienda_id(self, obj):
         try:
             return obj.residente.vivienda.id if obj.residente and obj.residente.vivienda else None
+        except Exception:
+            return None
+
+    def get_edificio_id(self, obj):
+        try:
+            # Residente: edificio de su vivienda
+            if hasattr(obj, 'residente') and obj.residente and obj.residente.vivienda:
+                return obj.residente.vivienda.edificio_id
+            # Vigilante: edificio asignado
+            if hasattr(obj, 'vigilante') and obj.vigilante:
+                return obj.vigilante.edificio_id
+            # Gerente: edificio asignado
+            if hasattr(obj, 'gerente') and obj.gerente:
+                return obj.gerente.edificio_id
+            return None
         except Exception:
             return None
 

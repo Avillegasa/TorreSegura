@@ -53,8 +53,19 @@ class Usuario(AbstractUser):
     numero_documento = models.CharField(max_length=20, blank=True)
     foto = models.ImageField(upload_to='usuarios/', blank=True, null=True)
     email_confirmado = models.BooleanField(default=False)
+    debe_cambiar_password = models.BooleanField(default=False,
+        help_text="Indica si el usuario debe cambiar su contraseña en el próximo inicio de sesión")
+    credenciales_expiran = models.DateTimeField(null=True, blank=True,
+        help_text="Fecha/hora en que expiran las credenciales temporales")
 
     objects = UsuarioManager()
+
+    @property
+    def credenciales_expiradas(self):
+        """Retorna True si las credenciales temporales han expirado"""
+        if self.credenciales_expiran:
+            return timezone.now() > self.credenciales_expiran
+        return False
 
     def clean(self):
         super().clean()

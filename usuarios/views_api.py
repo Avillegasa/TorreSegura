@@ -38,6 +38,22 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         if not validar_rol_para_api(user):
             raise serializers.ValidationError({"error": "Su rol debe ingresar desde la web"})
+
+        # Si las credenciales temporales expiraron, bloquear
+        if getattr(user, 'debe_cambiar_password', False) and user.credenciales_expiradas:
+            raise serializers.ValidationError({"error": "Tus credenciales temporales han expirado. Contacta al administrador."})
+
+        # Si debe cambiar contraseña, permitir login pero con flag
+        if getattr(user, 'debe_cambiar_password', False):
+            refresh = RefreshToken.for_user(user)
+            return {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user": UsuarioSerializer(user).data,
+                "debe_cambiar_password": True,
+                "mensaje": "Debes cambiar tu contraseña. Revisa tu correo electrónico y usa el enlace para crear tu contraseña definitiva."
+            }
+
         # Crear o actualizar el objeto EmailAddress para asegurar que sea primario
         email_address, created = EmailAddress.objects.get_or_create(
             user=user,
@@ -58,7 +74,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return {
             "refresh": str(refresh),
             "access": str(refresh.access_token),
-            "user": UsuarioSerializer(user).data
+            "user": UsuarioSerializer(user).data,
+            "debe_cambiar_password": False
         }
 
 class CustomTokenObtainPairView(TokenObtainPairView):

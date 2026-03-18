@@ -5,7 +5,8 @@
 {% block header %}Dashboard{% endblock %}
 
 {% block content %}
-<!-- Selector de edificio -->
+<!-- Selector de edificio (solo Admin puede cambiar) -->
+{% if request.user.rol.nombre == "Administrador" %}
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form id="edificioFilterForm" method="get" class="d-flex align-items-center">
@@ -29,9 +30,14 @@
         </form>
     </div>
 </div>
+{% else %}
+<div class="alert alert-info mb-4">
+    <h5 class="mb-0"><i class="fas fa-building"></i> Edificio: <strong>{{ edificio_nombre }}</strong></h5>
+</div>
+{% endif %}
 
-<!-- Título del dashboard con edificio seleccionado -->
-{% if edificio_seleccionado %}
+<!-- Título del dashboard con edificio seleccionado (solo Admin) -->
+{% if edificio_seleccionado and request.user.rol.nombre == "Administrador" %}
 <div class="alert alert-info mb-4">
     <h5 class="mb-0"><i class="fas fa-info-circle"></i> Mostrando información de: <strong>{{ edificio_nombre }}</strong>
     </h5>

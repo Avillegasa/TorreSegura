@@ -14,6 +14,7 @@ urlpatterns = [
     path('empleados/crear/', views.EmpleadoCreateView.as_view(), name='empleado-create'),
     # ✅ NUEVA URL: Para que Gerentes creen personal desde cero
     path('personal/crear/', views.PersonalCreateView.as_view(), name='personal-create'),
+    path('personal/credenciales/', views.credenciales_vigilante_view, name='personal-credenciales'),
     path('empleados/<int:pk>/', views.EmpleadoDetailView.as_view(), name='empleado-detail'),
     path('empleados/<int:pk>/editar/', views.EmpleadoUpdateView.as_view(), name='empleado-update'),
     path('empleados/<int:pk>/estado/', views.empleado_change_state, name='empleado-change-state'),

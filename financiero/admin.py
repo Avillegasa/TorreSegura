@@ -48,7 +48,6 @@ class CuotaAdmin(admin.ModelAdmin):
     list_filter = ['concepto', 'pagada', 'fecha_emision', 'fecha_vencimiento', 'vivienda__edificio']
     search_fields = ['concepto__nombre', 'vivienda__numero', 'vivienda__edificio__nombre']
     ordering = ['-fecha_vencimiento', 'vivienda__edificio__nombre', 'vivienda__numero']
-    list_editable = ['pagada']
     date_hierarchy = 'fecha_vencimiento'
     
     fieldsets = (
@@ -97,7 +96,6 @@ class PagoAdmin(admin.ModelAdmin):
     list_filter = ['estado', 'metodo_pago', 'fecha_pago', 'vivienda__edificio']
     search_fields = ['vivienda__numero', 'residente__usuario__first_name', 'residente__usuario__last_name', 'referencia']
     ordering = ['-fecha_pago', '-id']
-    list_editable = ['estado']
     date_hierarchy = 'fecha_pago'
     
     fieldsets = (
@@ -205,7 +203,6 @@ class GastoAdmin(admin.ModelAdmin):
     list_filter = ['estado', 'tipo_gasto', 'categoria', 'presupuestado', 'recurrente', 'fecha']
     search_fields = ['concepto', 'descripcion', 'proveedor', 'factura']
     ordering = ['-fecha', '-id']
-    list_editable = ['estado']
     date_hierarchy = 'fecha'
     
     fieldsets = (
@@ -273,15 +270,6 @@ class EstadoCuentaAdmin(admin.ModelAdmin):
             obj.calcular_totales()
 
 # ===== ACCIONES PERSONALIZADAS =====
-
-def marcar_cuotas_como_pagadas(modeladmin, request, queryset):
-    """Acción para marcar cuotas seleccionadas como pagadas (usar con cuidado)"""
-    count = queryset.filter(pagada=False).update(pagada=True)
-    modeladmin.message_user(
-        request,
-        f'{count} cuota(s) marcada(s) como pagadas. ATENCIÓN: Verifique que realmente fueron pagadas.'
-    )
-marcar_cuotas_como_pagadas.short_description = "⚠️ Marcar como pagadas (CUIDADO)"
 
 def actualizar_recargos_cuotas(modeladmin, request, queryset):
     """Acción para actualizar recargos de cuotas vencidas"""
@@ -351,7 +339,7 @@ def generar_estados_cuenta_automaticos(modeladmin, request, queryset):
 generar_estados_cuenta_automaticos.short_description = "Recalcular totales"
 
 # Agregar acciones a los modelos
-CuotaAdmin.actions = [marcar_cuotas_como_pagadas, actualizar_recargos_cuotas]
+CuotaAdmin.actions = [actualizar_recargos_cuotas]
 PagoAdmin.actions = [verificar_pagos_pendientes, rechazar_pagos_pendientes]
 GastoAdmin.actions = [marcar_gastos_como_pagados]
 EstadoCuentaAdmin.actions = [generar_estados_cuenta_automaticos]

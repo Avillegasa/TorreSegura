@@ -6,10 +6,12 @@ from .models import Visita
 
 
 class VisitanteSerializer(serializers.ModelSerializer):
-    # Campos “mobile” solicitados
+    # Campos "mobile" solicitados
     name = serializers.CharField(source="nombre_visitante", read_only=True)
     document = serializers.CharField(source="documento_visitante", read_only=True)
     purpose = serializers.CharField(source="motivo", read_only=True)
+    entryDate = serializers.DateTimeField(source="fecha_hora_entrada", read_only=True)
+    exitDate = serializers.DateTimeField(source="fecha_hora_salida", read_only=True)
     departmentNumber = serializers.SerializerMethodField()
     whoAuthorizes = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
@@ -21,6 +23,8 @@ class VisitanteSerializer(serializers.ModelSerializer):
             "name",
             "document",
             "purpose",
+            "entryDate",
+            "exitDate",
             "departmentNumber",
             "whoAuthorizes",
             "status",

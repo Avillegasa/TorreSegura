@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.conf import settings
 
@@ -33,6 +34,27 @@ class Reporte(models.Model):
         related_name='reportes_creados'
     )
     ultima_generacion = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-fecha_creacion']
+        verbose_name = 'Reporte'
+        verbose_name_plural = 'Reportes'
+        indexes = [
+            models.Index(fields=['tipo', 'activo']),
+            models.Index(fields=['es_favorito']),
+            models.Index(fields=['-fecha_creacion']),
+        ]
+
+    def clean(self):
+        if self.fecha_desde and self.fecha_hasta:
+            if self.fecha_hasta < self.fecha_desde:
+                raise ValidationError({
+                    'fecha_hasta': 'La fecha final debe ser igual o posterior a la fecha inicial.'
+                })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.nombre

@@ -1,6 +1,16 @@
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from allauth.account.adapter import DefaultAccountAdapter
 from allauth.account.utils import user_email, user_field, user_username
 from usuarios.models import Rol
+
+
+class CustomAccountAdapter(DefaultAccountAdapter):
+    \"\"\"
+    Adaptador que restringe el login web solo a roles Admin/Gerente.
+    Los demás roles deben usar la app móvil.
+    \"\"\"
+    def is_open_for_signup(self, request):
+        return False  # No permitir registro vía allauth web
 
 class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
     """

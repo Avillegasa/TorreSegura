@@ -16,13 +16,14 @@ class AlertaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Alerta
         fields = [
-            'id', 'tipo', 'descripcion', 'enviado_por', 'fecha', 
+            'id', 'tipo', 'descripcion', 'enviado_por', 'fecha',
             'estado', 'atendido_por', 'fecha_atencion',
-            'enviado_por_info', 'atendido_por_info'
+            'enviado_por_info', 'atendido_por_info',
+            'edificio', 'vivienda',
         ]
         read_only_fields = ['id', 'fecha', 'enviado_por']
 
 class CrearAlertaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Alerta
-        fields = ['tipo', 'descripcion']
+        fields = ['tipo', 'descripcion', 'edificio', 'vivienda']

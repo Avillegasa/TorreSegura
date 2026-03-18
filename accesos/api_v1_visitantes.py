@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -23,6 +25,7 @@ class VisitanteViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = VisitanteSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None  # La app movil no maneja paginacion
 
     def _rol(self) -> str | None:
         return getattr(getattr(self.request.user, "rol", None), "nombre", None)
@@ -66,8 +69,19 @@ class VisitanteViewSet(viewsets.ReadOnlyModelViewSet):
             elif status_filter == "departed":
                 qs = qs.filter(fecha_hora_salida__isnull=False)
             else:
-                # Forzamos error JSON consistente
                 raise ValueError("status inválido. Use pending|scanned|departed")
+
+        # Filtro por rango de fechas (máximo 1 mes hacia atrás)
+        un_mes_atras = timezone.now() - timedelta(days=30)
+        qs = qs.filter(fecha_hora_entrada__gte=un_mes_atras)
+
+        # Filtro opcional: search (nombre o documento del visitante)
+        search = self.request.query_params.get("search")
+        if search:
+            qs = qs.filter(
+                Q(nombre_visitante__icontains=search)
+                | Q(documento_visitante__icontains=search)
+            )
 
         return qs
 

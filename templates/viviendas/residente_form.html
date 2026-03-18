@@ -22,16 +22,13 @@
                     </h5>
                     <div class="row">
                         <div class="col-md-6">
-                            {{ form.username|as_crispy_field }}
-                        </div>
-                        <div class="col-md-6">
-                            {{ form.numero_documento|as_crispy_field }}
-                        </div>
-                        <div class="col-md-6">
                             {{ form.first_name|as_crispy_field }}
                         </div>
                         <div class="col-md-6">
                             {{ form.last_name|as_crispy_field }}
+                        </div>
+                        <div class="col-md-6">
+                            {{ form.numero_documento|as_crispy_field }}
                         </div>
                         <div class="col-md-6">
                             {{ form.email|as_crispy_field }}
@@ -41,8 +38,8 @@
                         </div>
                     </div>
 
-                    <!-- Solo mostrar campos de contraseña en creación -->
-                    {% if not form.instance.pk %}
+                    <!-- Solo mostrar campos de contraseña en edición -->
+                    {% if form.instance.pk %}
                     <div class="row">
                         <div class="col-md-6">
                             {{ form.password1|as_crispy_field }}
@@ -50,6 +47,11 @@
                         <div class="col-md-6">
                             {{ form.password2|as_crispy_field }}
                         </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Se generará una contraseña temporal automáticamente y se enviará al correo del residente. Las credenciales serán válidas por <strong>24 horas</strong>.
                     </div>
                     {% endif %}
 
