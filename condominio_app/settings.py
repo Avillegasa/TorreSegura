@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'financiero',
     'reportes',
     'alertas',
+    'areas_comunes',
 ]
 
 MIDDLEWARE = [

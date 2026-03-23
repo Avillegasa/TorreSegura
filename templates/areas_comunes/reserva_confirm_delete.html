@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}Eliminar Reserva | Torre Segura{% endblock %}
+{% block header %}Eliminar Reserva{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 mx-auto">
+        <div class="card shadow">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-exclamation-triangle"></i> Confirmar Eliminacion</h5>
+            </div>
+            <div class="card-body text-center">
+                <p class="lead">Estas seguro que deseas eliminar esta reserva?</p>
+                <div class="alert alert-warning">
+                    <strong>{{ object.area_comun.nombre }}</strong><br>
+                    {{ object.fecha|date:"d/m/Y" }} - {{ object.hora_inicio|time:"H:i" }} a {{ object.hora_fin|time:"H:i" }}<br>
+                    Residente: {{ object.residente.usuario.get_full_name|default:object.residente.usuario.username }}
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mt-4 d-flex justify-content-center gap-3">
+                        <a href="{% url 'reserva-list' %}" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Eliminar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

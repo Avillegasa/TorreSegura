@@ -42,6 +42,7 @@ urlpatterns = [
     path('accesos/', include('accesos.urls')),
     path('personal/', include('personal.urls')),
     path('alertas/', include('alertas.urls')),  # Vistas HTML (dashboard)
+    path('areas-comunes/', include('areas_comunes.urls')),
     path('financiero/', include('financiero.urls')),
     path('reportes/', include('reportes.urls')),
     

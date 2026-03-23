@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block title %}Eliminar Area Comun | Torre Segura{% endblock %}
+{% block header %}Eliminar Area Comun{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 mx-auto">
+        <div class="card shadow">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-exclamation-triangle"></i> Confirmar Eliminacion</h5>
+            </div>
+            <div class="card-body text-center">
+                <p class="lead">Estas seguro que deseas eliminar el area comun?</p>
+                <div class="alert alert-warning">
+                    <strong>{{ object.nombre }}</strong> - {{ object.edificio.nombre }}
+                </div>
+                <p>Esta accion eliminara todas las reservas asociadas a esta area.</p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mt-4 d-flex justify-content-center gap-3">
+                        <a href="{% url 'area-comun-list' %}" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Eliminar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

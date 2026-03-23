@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from viviendas.models import Edificio, Vivienda, Residente
 from accesos.models import Visita, MovimientoResidente
 from personal.models import Empleado, Asignacion
+from financiero.models import Cuota, Pago
 from usuarios.views import tiene_acceso_web
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
@@ -149,6 +150,24 @@ def dashboard(request):
             total_personal = Empleado.objects.filter(activo=True).count()
             total_asignaciones_pendientes = Asignacion.objects.filter(estado='PENDIENTE').count()
         
+        # Estadísticas financieras
+        cuotas_q = Cuota.objects.filter(vivienda__activo=True)
+        pagos_q = Pago.objects.all()
+        if edificio_id:
+            cuotas_q = cuotas_q.filter(vivienda__edificio_id=edificio_id)
+            pagos_q = pagos_q.filter(vivienda__edificio_id=edificio_id)
+
+        fin_stats = cuotas_q.aggregate(
+            cuotas_pendientes=Count('id', filter=Q(pagada=False)),
+            cuotas_vencidas=Count('id', filter=Q(pagada=False, fecha_vencimiento__lt=timezone.now().date())),
+            total_por_cobrar=Sum('monto', filter=Q(pagada=False)),
+        )
+        cuotas_pendientes_count = fin_stats['cuotas_pendientes'] or 0
+        cuotas_vencidas_count = fin_stats['cuotas_vencidas'] or 0
+        total_por_cobrar = fin_stats['total_por_cobrar'] or 0
+
+        pagos_por_verificar = pagos_q.filter(estado='PENDIENTE').count()
+
         # Guardar en caché por 5 minutos
         cached_stats = {
             'total_viviendas': total_viviendas,
@@ -162,6 +181,10 @@ def dashboard(request):
             'visitas_activas': visitas_activas,
             'total_personal': total_personal,
             'total_asignaciones_pendientes': total_asignaciones_pendientes,
+            'cuotas_pendientes_count': cuotas_pendientes_count,
+            'cuotas_vencidas_count': cuotas_vencidas_count,
+            'total_por_cobrar': total_por_cobrar,
+            'pagos_por_verificar': pagos_por_verificar,
         }
         cache.set(cache_key, cached_stats, 300)  # 5 minutos
     
@@ -177,6 +200,10 @@ def dashboard(request):
     visitas_activas = cached_stats['visitas_activas']
     total_personal = cached_stats['total_personal']
     total_asignaciones_pendientes = cached_stats['total_asignaciones_pendientes']
+    cuotas_pendientes_count = cached_stats.get('cuotas_pendientes_count', 0)
+    cuotas_vencidas_count = cached_stats.get('cuotas_vencidas_count', 0)
+    total_por_cobrar = cached_stats.get('total_por_cobrar', 0)
+    pagos_por_verificar = cached_stats.get('pagos_por_verificar', 0)
     
     # Obtener datos recientes (no cacheados para mostrar información actualizada)
     # Últimas visitas
@@ -219,6 +246,16 @@ def dashboard(request):
             'residente__usuario', 'residente__vivienda'
         ).order_by('-fecha_hora_entrada', '-fecha_hora_salida')[:5]
     
+    # Pagos pendientes de verificacion (recientes)
+    pagos_pendientes_q = Pago.objects.filter(estado='PENDIENTE')
+    if edificio_id:
+        pagos_pendientes_q = pagos_pendientes_q.filter(vivienda__edificio_id=edificio_id)
+    ultimos_pagos_pendientes = (
+        pagos_pendientes_q
+        .select_related('vivienda', 'residente__usuario')
+        .order_by('-fecha_pago', '-id')[:5]
+    )
+
     # Preparar contexto para el template
     context = {
         'viviendas_ocupadas': viviendas_ocupadas or 0,
@@ -238,6 +275,12 @@ def dashboard(request):
         'total_personal': total_personal,
         'total_asignaciones_pendientes': total_asignaciones_pendientes,
         'ultimas_asignaciones': ultimas_asignaciones,
+        # Financiero
+        'cuotas_pendientes_count': cuotas_pendientes_count,
+        'cuotas_vencidas_count': cuotas_vencidas_count,
+        'total_por_cobrar': total_por_cobrar,
+        'pagos_por_verificar': pagos_por_verificar,
+        'ultimos_pagos_pendientes': ultimos_pagos_pendientes,
     }
     
     return render(request, 'dashboard.html', context)
