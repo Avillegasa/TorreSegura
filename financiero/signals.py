@@ -88,16 +88,37 @@ def revertir_cuota_al_eliminar_pago_cuota(sender, instance, **kwargs):
 @receiver(post_save, sender=Pago)
 def procesar_pago_verificado(sender, instance, created, **kwargs):
     """
-    Procesar automáticamente un pago cuando se verifica
+    Procesar automáticamente un pago cuando se verifica.
+    Si ya tiene cuotas asignadas, actualiza su estado.
+    Si no tiene cuotas, las auto-asigna.
     """
     try:
         # Solo procesar cuando el pago se marca como verificado
         if instance.estado == 'VERIFICADO' and not created:
-            # Verificar si ya tiene cuotas asignadas
-            cuotas_asignadas = PagoCuota.objects.filter(pago=instance).exists()
+            with transaction.atomic():
+                cuotas_asignadas = PagoCuota.objects.filter(pago=instance)
 
-            if not cuotas_asignadas and instance.monto > 0:
-                with transaction.atomic():
+                if cuotas_asignadas.exists():
+                    # Ya tiene cuotas asignadas: actualizar estado de cada una
+                    for pago_cuota in cuotas_asignadas.select_related('cuota'):
+                        cuota = pago_cuota.cuota
+                        total_pagado = PagoCuota.objects.filter(
+                            cuota=cuota,
+                            pago__estado='VERIFICADO'
+                        ).aggregate(
+                            total=models.Sum('monto_aplicado')
+                        )['total'] or Decimal('0')
+
+                        if total_pagado >= cuota.total_a_pagar():
+                            cuota.pagada = True
+                            cuota.recargo = Decimal('0')
+                            cuota.save(update_fields=['pagada', 'recargo'])
+                            logger.info(f"Cuota {cuota.id} marcada como pagada al verificar pago {instance.id}")
+                        elif cuota.pagada:
+                            cuota.pagada = False
+                            cuota.save(update_fields=['pagada'])
+                elif instance.monto > 0:
+                    # Sin cuotas asignadas: auto-asignar
                     auto_asignar_pago_a_cuotas(instance)
 
     except Exception as e:

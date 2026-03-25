@@ -3,9 +3,6 @@ from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from django.db.models.signals import post_save, post_delete
-from django.dispatch import receiver
-
 from usuarios.models import Usuario
 from viviendas.models import Vivienda, Residente
 
@@ -416,38 +413,4 @@ class EstadoCuenta(models.Model):
             models.Index(fields=['vivienda', 'fecha_fin']),
         ]
 
-# Señales y hooks
-
-@receiver(post_save, sender=PagoCuota)
-def actualizar_cuota_al_pagar(sender, instance, created, **kwargs):
-    """
-    Cuando se crea o actualiza un PagoCuota, actualiza el estado de la cuota
-    """
-    cuota = instance.cuota
-    
-    # Si el pago está verificado, marcar la cuota como pagada
-    if instance.pago.estado == 'VERIFICADO':
-        # Verificar si el monto aplicado cubre el total
-        if instance.monto_aplicado >= cuota.total_a_pagar():
-            cuota.pagada = True
-            cuota.recargo = 0
-        else:
-            # Pago parcial, reducir el monto pendiente
-            cuota.monto = cuota.monto - instance.monto_aplicado
-            cuota.pagada = False
-        
-        cuota.save()
-
-@receiver(post_delete, sender=PagoCuota)
-def revertir_pago_al_eliminar(sender, instance, **kwargs):
-    """
-    Cuando se elimina un PagoCuota, revierte el estado de la cuota si es necesario
-    """
-    cuota = instance.cuota
-    
-    # Si la cuota estaba marcada como pagada y el pago estaba verificado
-    if cuota.pagada and instance.pago.estado == 'VERIFICADO':
-        # Restaurar el estado de la cuota
-        cuota.pagada = False
-        cuota.actualizar_recargo()  # Recalcular recargos
-        cuota.save()
+# Señales se registran en financiero/signals.py (importado por apps.py ready())

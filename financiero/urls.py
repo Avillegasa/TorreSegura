@@ -51,6 +51,7 @@ urlpatterns = [
     path('estados-cuenta/', views.EstadoCuentaListView.as_view(), name='estado-cuenta-list'),
     path('estados-cuenta/crear/', views.EstadoCuentaCreateView.as_view(), name='estado-cuenta-create'),
     path('estados-cuenta/<int:pk>/', views.EstadoCuentaDetailView.as_view(), name='estado-cuenta-detail'),
+    path('estados-cuenta/<int:pk>/editar/', views.EstadoCuentaUpdateView.as_view(), name='estado-cuenta-update'),
     path('estados-cuenta/<int:pk>/pdf/', views.estado_cuenta_pdf, name='estado-cuenta-pdf'),
     path('estados-cuenta/<int:pk>/enviar/', views.enviar_estado_cuenta, name='estado-cuenta-enviar'),
     path('estados-cuenta/generar-masivos/', views.generar_estados_cuenta, name='estado-cuenta-generar-masivos'),
