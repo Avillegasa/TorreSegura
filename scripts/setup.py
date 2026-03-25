@@ -82,32 +82,43 @@ def setup():
                 vigilante.rol = Rol.objects.get(nombre='Vigilante')
                 vigilante.save()
             
+            pisos_ejemplo = 10
+            viviendas_por_piso = 4
+            total_viviendas_ejemplo = pisos_ejemplo * viviendas_por_piso
+
             # Crear edificio de ejemplo
             print("Creando edificio de ejemplo...")
             edificio, created = Edificio.objects.get_or_create(
                 nombre='Torre Aurora',
                 defaults={
                     'direccion': 'Av. Principal #123, Ciudad',
-                    'pisos': 10,
+                    'pisos': pisos_ejemplo,
+                    'cantidad_viviendas': total_viviendas_ejemplo,
                     'fecha_construccion': '2018-01-01'
                 }
             )
+
+            # Asegurar capacidad mínima para el seed si el edificio ya existía.
+            if not created and edificio.cantidad_viviendas < total_viviendas_ejemplo:
+                edificio.cantidad_viviendas = total_viviendas_ejemplo
+                edificio.save(update_fields=['cantidad_viviendas'])
             
             # Crear viviendas de ejemplo
-            if created:
-                print("Creando viviendas de ejemplo...")
-                for piso in range(1, 11):  # 10 pisos
-                    for num in range(1, 5):  # 4 departamentos por piso
-                        numero = f"{piso}0{num}"
-                        Vivienda.objects.create(
-                            edificio=edificio,
-                            numero=numero,
-                            piso=piso,
-                            metros_cuadrados=85 + (5 * num),  # Variar tamaño
-                            habitaciones=2 if num <= 2 else 3,
-                            baños=1 if num == 1 else 2,
-                            estado='DESOCUPADO'
-                        )
+            print("Creando viviendas de ejemplo...")
+            for piso in range(1, pisos_ejemplo + 1):
+                for num in range(1, viviendas_por_piso + 1):
+                    numero = f"{piso}0{num}"
+                    Vivienda.objects.get_or_create(
+                        edificio=edificio,
+                        numero=numero,
+                        defaults={
+                            'piso': piso,
+                            'metros_cuadrados': 85 + (5 * num),
+                            'habitaciones': 2 if num <= 2 else 3,
+                            'baños': 1 if num == 1 else 2,
+                            'estado': 'DESOCUPADO',
+                        }
+                    )
             
             # Crear usuarios residentes y asignarlos a viviendas
             print("Creando residentes de ejemplo...")
