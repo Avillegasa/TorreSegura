@@ -48,55 +48,105 @@ class ConceptoCuotaForm(forms.ModelForm):
         return porcentaje
 
 class CuotaForm(forms.ModelForm):
+    CONCEPTO_TIPO_CHOICES = [
+        ('expensas', 'Expensas'),
+        ('personalizado', 'Otro (escribir concepto)'),
+    ]
+
+    concepto_tipo = forms.ChoiceField(
+        choices=CONCEPTO_TIPO_CHOICES,
+        label="Concepto",
+        initial='expensas',
+        widget=forms.Select(attrs={'class': 'form-control'}),
+        help_text='Tipo de cuota a generar',
+    )
+    concepto_nombre = forms.CharField(
+        required=False,
+        label="Nombre del concepto",
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Escribe el nombre del concepto',
+        }),
+    )
+
     class Meta:
         model = Cuota
-        fields = ['concepto', 'vivienda', 'monto', 'fecha_emision', 'fecha_vencimiento', 'notas']
+        fields = ['vivienda', 'monto', 'fecha_vencimiento', 'notas']
         widgets = {
-            'fecha_emision': forms.DateInput(attrs={'type': 'date'}),
             'fecha_vencimiento': forms.DateInput(attrs={'type': 'date'}),
             'notas': forms.Textarea(attrs={'rows': 3}),
             'monto': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
         }
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Configurar campos
-        self.fields['concepto'].queryset = ConceptoCuota.objects.filter(activo=True)
         self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True).select_related('edificio')
-        
-        # Agregar clases de Bootstrap
-        for field_name, field in self.fields.items():
-            field.widget.attrs['class'] = 'form-control'
-        
-        # Si es una cuota nueva, establecer fechas predeterminadas
-        if not kwargs.get('instance'):
-            self.fields['fecha_emision'].initial = timezone.now().date()
-            self.fields['fecha_vencimiento'].initial = timezone.now().date() + timezone.timedelta(days=30)
-        
-        # Mejorar labels
-        self.fields['concepto'].help_text = 'Tipo de cuota a generar'
         self.fields['vivienda'].help_text = 'Vivienda a la que se asigna la cuota'
-    
+
+        for field_name, field in self.fields.items():
+            if field_name not in ['concepto_tipo', 'concepto_nombre']:
+                field.widget.attrs['class'] = 'form-control'
+
+        if not kwargs.get('instance'):
+            self.fields['fecha_vencimiento'].initial = timezone.now().date() + timezone.timedelta(days=30)
+        else:
+            # Pre-poblar concepto_tipo/nombre desde la instancia existente
+            instance = kwargs['instance']
+            nombre_concepto = instance.concepto.nombre
+            if nombre_concepto.lower() == 'expensas':
+                self.fields['concepto_tipo'].initial = 'expensas'
+            else:
+                self.fields['concepto_tipo'].initial = 'personalizado'
+                self.fields['concepto_nombre'].initial = nombre_concepto
+
     def clean(self):
         cleaned_data = super().clean()
-        fecha_emision = cleaned_data.get('fecha_emision')
-        fecha_vencimiento = cleaned_data.get('fecha_vencimiento')
+        concepto_tipo = cleaned_data.get('concepto_tipo')
+        concepto_nombre = cleaned_data.get('concepto_nombre', '').strip()
         vivienda = cleaned_data.get('vivienda')
-        
-        if fecha_emision and fecha_vencimiento and fecha_vencimiento < fecha_emision:
-            raise ValidationError({'fecha_vencimiento': _('La fecha de vencimiento debe ser posterior a la fecha de emisión.')})
-        
-        # Validar que la vivienda esté activa
+
+        if concepto_tipo == 'personalizado' and not concepto_nombre:
+            raise ValidationError({'concepto_nombre': 'Debe ingresar un nombre para el concepto personalizado.'})
+
         if vivienda and not vivienda.activo:
             raise ValidationError({'vivienda': 'No se pueden generar cuotas para viviendas dadas de baja.'})
-        
+
         return cleaned_data
-    
+
     def clean_monto(self):
         monto = self.cleaned_data.get('monto')
         if monto is not None and monto <= 0:
             raise ValidationError('El monto debe ser mayor a cero.')
         return monto
+
+    def save(self, commit=True):
+        cuota = super().save(commit=False)
+
+        concepto_tipo = self.cleaned_data.get('concepto_tipo')
+        if concepto_tipo == 'personalizado':
+            nombre = self.cleaned_data.get('concepto_nombre', '').strip()
+        else:
+            nombre = 'Expensas'
+
+        concepto, _ = ConceptoCuota.objects.get_or_create(
+            nombre=nombre,
+            defaults={
+                'monto_base': cuota.monto or 0,
+                'periodicidad': 'MENSUAL',
+                'activo': True,
+            }
+        )
+        cuota.concepto = concepto
+
+        # fecha_emision se asigna automáticamente (default=timezone.now en el modelo)
+        # Solo forzarla en creación nueva
+        if not cuota.pk:
+            cuota.fecha_emision = timezone.now().date()
+
+        if commit:
+            cuota.save()
+
+        return cuota
 
 class GenerarCuotasForm(forms.Form):
     concepto = forms.ModelChoiceField(

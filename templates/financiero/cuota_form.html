@@ -15,28 +15,37 @@
             <div class="card-body">
                 <form method="post">
                     {% csrf_token %}
-                    
+
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            {{ form.concepto|as_crispy_field }}
+                            {{ form.concepto_tipo|as_crispy_field }}
                         </div>
+                        <div class="col-md-6" id="campo-concepto-personalizado" style="display:none;">
+                            {{ form.concepto_nombre|as_crispy_field }}
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
                         <div class="col-md-6">
                             {{ form.vivienda|as_crispy_field }}
                         </div>
-                    </div>
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             {{ form.monto|as_crispy_field }}
                         </div>
-                        <div class="col-md-4">
-                            {{ form.fecha_emision|as_crispy_field }}
-                        </div>
-                        <div class="col-md-4">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
                             {{ form.fecha_vencimiento|as_crispy_field }}
                         </div>
+                        <div class="col-md-6 d-flex align-items-center">
+                            <small class="text-muted mt-3">
+                                <i class="fas fa-info-circle"></i>
+                                La fecha de emisión se registra automáticamente con la fecha actual.
+                            </small>
+                        </div>
                     </div>
-                    
+
                     <div class="row mb-3">
                         <div class="col-md-12">
                             {{ form.notas|as_crispy_field }}
@@ -82,45 +91,27 @@
 {% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const conceptoSelect = document.getElementById('id_concepto');
-        const montoInput = document.getElementById('id_monto');
-        
-        // Actualizar monto base cuando cambia el concepto
-        if (conceptoSelect && montoInput) {
-            conceptoSelect.addEventListener('change', function() {
-                const conceptoId = this.value;
-                if (!conceptoId) return;
-                
-                // Obtener el monto base del concepto seleccionado
-                fetch(`/financiero/api/concepto/${conceptoId}/`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.monto_base && !montoInput.value) {
-                            montoInput.value = data.monto_base;
-                        }
-                    })
-                    .catch(error => console.log('Info: No se pudo obtener el monto base automáticamente'));
-            });
-        }
-        
-        // Validación de fechas
-        const fechaEmisionInput = document.getElementById('id_fecha_emision');
-        const fechaVencimientoInput = document.getElementById('id_fecha_vencimiento');
-        
-        if (fechaEmisionInput && fechaVencimientoInput) {
-            function validarFechas() {
-                const fechaEmision = new Date(fechaEmisionInput.value);
-                const fechaVencimiento = new Date(fechaVencimientoInput.value);
-                
-                if (fechaEmision && fechaVencimiento && fechaVencimiento <= fechaEmision) {
-                    fechaVencimientoInput.setCustomValidity('La fecha de vencimiento debe ser posterior a la fecha de emisión');
-                } else {
-                    fechaVencimientoInput.setCustomValidity('');
+        const conceptoTipoSelect = document.getElementById('id_concepto_tipo');
+        const campoPersonalizado = document.getElementById('campo-concepto-personalizado');
+        const conceptoNombreInput = document.getElementById('id_concepto_nombre');
+
+        function toggleConceptoPersonalizado() {
+            if (conceptoTipoSelect.value === 'personalizado') {
+                campoPersonalizado.style.display = '';
+                if (conceptoNombreInput) conceptoNombreInput.required = true;
+            } else {
+                campoPersonalizado.style.display = 'none';
+                if (conceptoNombreInput) {
+                    conceptoNombreInput.required = false;
+                    conceptoNombreInput.value = '';
                 }
             }
-            
-            fechaEmisionInput.addEventListener('change', validarFechas);
-            fechaVencimientoInput.addEventListener('change', validarFechas);
+        }
+
+        if (conceptoTipoSelect) {
+            conceptoTipoSelect.addEventListener('change', toggleConceptoPersonalizado);
+            // Ejecutar al cargar para manejar el caso de edición
+            toggleConceptoPersonalizado();
         }
     });
 </script>

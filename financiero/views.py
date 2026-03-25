@@ -255,8 +255,27 @@ class CuotaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
         return form
 
     def form_valid(self, form):
-        messages.success(self.request, 'Cuota creada exitosamente.')
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        cuota = self.object
+        vivienda = cuota.vivienda
+
+        # Crear alerta de notificación para los residentes de la vivienda
+        from alertas.models import Alerta
+        descripcion = (
+            f"Se ha generado una nueva cuota para la vivienda {vivienda.numero} - {vivienda.edificio.nombre}: "
+            f"{cuota.concepto.nombre} por ${cuota.monto:.2f}. "
+            f"Fecha de vencimiento: {cuota.fecha_vencimiento.strftime('%d/%m/%Y')}."
+        )
+        Alerta.objects.create(
+            tipo='Aviso importante',
+            descripcion=descripcion,
+            enviado_por=self.request.user,
+            edificio=vivienda.edificio,
+            vivienda=vivienda,
+        )
+
+        messages.success(self.request, 'Cuota creada exitosamente. Se notificó a los residentes de la vivienda.')
+        return response
 
 class CuotaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Cuota
