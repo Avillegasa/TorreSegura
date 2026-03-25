@@ -315,6 +315,12 @@ class Gasto(models.Model):
     ]
     
     categoria = models.ForeignKey(CategoriaGasto, on_delete=models.PROTECT, related_name='gastos')
+    edificio = models.ForeignKey(
+        Edificio, on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='gastos',
+        help_text="Edificio al que se asocia este gasto",
+    )
     concepto = models.CharField(max_length=200)
     descripcion = models.TextField(blank=True)
     monto = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])

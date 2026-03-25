@@ -4,7 +4,7 @@ from django.views.generic import ListView, CreateView, UpdateView, DeleteView, D
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse,FileResponse, HttpResponse
-from django.db.models import Sum, Q, F, DecimalField
+from django.db.models import Sum, Q, F, Count, DecimalField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.contrib import messages
@@ -1489,64 +1489,173 @@ def dashboard_financiero(request):
         filters_pagos['vivienda__edificio_id'] = edificio_id
         filters_cuotas['vivienda__edificio_id'] = edificio_id
     
-    # CÁLCULOS FINANCIEROS DEL MES ACTUAL
-    
-    # Ingresos del mes actual
+    # Filtro Q reutilizable para gastos por edificio
+    gastos_edificio_q = Q()
+    if edificio_id:
+        gastos_edificio_q = Q(edificio_id=edificio_id) | Q(edificio__isnull=True)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # TARJETA 1: SALDO DISPONIBLE (simula saldo BNB)
+    # Total histórico de pagos verificados - Total histórico de gastos pagados
+    # ═══════════════════════════════════════════════════════════════════
+
+    filters_pagos_global = {'estado': 'VERIFICADO'}
+    filters_gastos_global = {'estado': 'PAGADO'}
+    if vivienda_id:
+        filters_pagos_global['vivienda_id'] = vivienda_id
+    elif edificio_id:
+        filters_pagos_global['vivienda__edificio_id'] = edificio_id
+        filters_gastos_global['edificio_id'] = edificio_id
+
+    total_ingresos_historico = Pago.objects.filter(
+        **filters_pagos_global
+    ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
+
+    total_gastos_historico = Decimal('0')
+    if es_admin or es_gerente:
+        total_gastos_historico = Gasto.objects.filter(
+            gastos_edificio_q, estado='PAGADO'
+        ).aggregate(
+            total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0'))
+        )['total']
+
+    saldo_disponible = total_ingresos_historico - total_gastos_historico
+
+    # ═══════════════════════════════════════════════════════════════════
+    # TARJETA 2: INGRESOS DEL MES (desglose por concepto)
+    # Expensas cobradas, multas, alquiler áreas comunes, otros
+    # ═══════════════════════════════════════════════════════════════════
+
     ingresos_mes_actual = Pago.objects.filter(
         fecha_pago__gte=inicio_mes_actual,
         fecha_pago__lte=fin_mes_actual,
         **filters_pagos
     ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
-    
-    # Gastos del mes actual (solo para admin/gerente)
+
+    # Desglose de ingresos por concepto de cuota
+    from django.db.models import Value, CharField as DjCharField
+
+    ingresos_por_concepto = PagoCuota.objects.filter(
+        pago__estado='VERIFICADO',
+        pago__fecha_pago__gte=inicio_mes_actual,
+        pago__fecha_pago__lte=fin_mes_actual,
+    )
+    if vivienda_id:
+        ingresos_por_concepto = ingresos_por_concepto.filter(pago__vivienda_id=vivienda_id)
+    elif edificio_id:
+        ingresos_por_concepto = ingresos_por_concepto.filter(pago__vivienda__edificio_id=edificio_id)
+
+    ingresos_por_concepto = ingresos_por_concepto.values(
+        'cuota__concepto__nombre'
+    ).annotate(
+        total=Sum('monto_aplicado')
+    ).order_by('-total')
+
+    desglose_ingresos = []
+    for item in ingresos_por_concepto:
+        desglose_ingresos.append({
+            'concepto': item['cuota__concepto__nombre'] or 'Otro',
+            'monto': item['total'],
+        })
+
+    # ═══════════════════════════════════════════════════════════════════
+    # TARJETA 3: GASTOS OPERATIVOS (gastos del mes + sueldos personal)
+    # ═══════════════════════════════════════════════════════════════════
+
     gastos_mes_actual = Decimal('0')
+    gastos_pagados_mes = Decimal('0')
+    gastos_pendientes_mes = Decimal('0')
+    total_salarios = Decimal('0')
+    num_empleados = 0
+
     if es_admin or es_gerente:
-        gastos_mes_actual = Gasto.objects.filter(
+        # Gastos pagados del mes
+        gastos_pagados_mes = Gasto.objects.filter(
+            gastos_edificio_q,
             fecha__gte=inicio_mes_actual,
             fecha__lte=fin_mes_actual,
-            **filters_gastos
+            estado='PAGADO',
         ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
-    
-    # Balance del mes
+
+        # Gastos pendientes del mes
+        gastos_pendientes_mes = Gasto.objects.filter(
+            gastos_edificio_q,
+            fecha__gte=inicio_mes_actual,
+            fecha__lte=fin_mes_actual,
+            estado='PENDIENTE',
+        ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
+
+        # Sueldos del personal activo del edificio
+        from personal.models import Empleado
+        empleados_q = Empleado.objects.filter(activo=True)
+        if edificio_id:
+            empleados_q = empleados_q.filter(edificio_id=edificio_id)
+        elif es_gerente and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            empleados_q = empleados_q.filter(edificio=user.gerente.edificio)
+
+        total_salarios = empleados_q.aggregate(
+            total=Coalesce(Sum('salario', output_field=DecimalField()), Decimal('0'))
+        )['total']
+        num_empleados = empleados_q.count()
+
+        gastos_mes_actual = gastos_pagados_mes + gastos_pendientes_mes + total_salarios
+
+    # Balance = Ingresos del mes - Gastos operativos totales del mes
     balance_mes_actual = ingresos_mes_actual - gastos_mes_actual
-    
-    # CÁLCULOS DEL MES ANTERIOR PARA TENDENCIAS
+
+    # ═══════════════════════════════════════════════════════════════════
+    # TENDENCIAS (comparación con mes anterior)
+    # ═══════════════════════════════════════════════════════════════════
+
     ingresos_mes_anterior = Pago.objects.filter(
         fecha_pago__gte=inicio_mes_anterior,
         fecha_pago__lte=fin_mes_anterior,
         **filters_pagos
     ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
-    
+
     gastos_mes_anterior = Decimal('0')
     if es_admin or es_gerente:
         gastos_mes_anterior = Gasto.objects.filter(
+            gastos_edificio_q,
             fecha__gte=inicio_mes_anterior,
             fecha__lte=fin_mes_anterior,
-            **filters_gastos
+            estado='PAGADO',
         ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
-    
-    # Calcular tendencias
+
     if ingresos_mes_anterior > 0:
         tendencia_ingresos = float((ingresos_mes_actual - ingresos_mes_anterior) / ingresos_mes_anterior * 100)
     else:
         tendencia_ingresos = 100.0 if ingresos_mes_actual > 0 else 0.0
-        
+
     if gastos_mes_anterior > 0:
         tendencia_gastos = float((gastos_mes_actual - gastos_mes_anterior) / gastos_mes_anterior * 100)
     else:
         tendencia_gastos = 100.0 if gastos_mes_actual > 0 else 0.0
-    
-    # CUOTAS PENDIENTES Y VENCIDAS
+
+    # ═══════════════════════════════════════════════════════════════════
+    # TARJETA 4: PENDIENTE POR COBRAR (por vivienda)
+    # ═══════════════════════════════════════════════════════════════════
+
     cuotas_pendientes = Cuota.objects.filter(**filters_cuotas).count()
     cuotas_vencidas = Cuota.objects.filter(
         fecha_vencimiento__lt=hoy,
         **filters_cuotas
     ).count()
-    
-    # Total por cobrar
+
     total_pendiente = Cuota.objects.filter(**filters_cuotas).aggregate(
         total=Coalesce(Sum(F('monto') + F('recargo')), Decimal('0'))
     )['total']
+
+    # Desglose de pendientes por vivienda (top 10)
+    pendientes_por_vivienda = Cuota.objects.filter(
+        **filters_cuotas
+    ).values(
+        'vivienda__numero', 'vivienda__piso', 'vivienda__edificio__nombre'
+    ).annotate(
+        total_deuda=Sum(F('monto') + F('recargo')),
+        num_cuotas=Count('id'),
+        num_vencidas=Count('id', filter=Q(fecha_vencimiento__lt=hoy)),
+    ).order_by('-total_deuda')[:10]
     
     # DATOS PARA GRÁFICOS - ÚLTIMOS 6 MESES
     datos_meses = []
@@ -1578,44 +1687,47 @@ def dashboard_financiero(request):
         gastos = Decimal('0')
         if es_admin or es_gerente:
             gastos = Gasto.objects.filter(
+                gastos_edificio_q,
                 fecha__gte=inicio_mes,
                 fecha__lte=fin_mes,
-                **filters_gastos
+                estado='PAGADO',
             ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
-        
+
         datos_meses.append({
             'mes': mes_calculo.strftime('%b %Y'),
             'ingresos': float(ingresos),
             'gastos': float(gastos),
             'balance': float(ingresos - gastos)
         })
-    
+
     # DATOS PARA GRÁFICO DE GASTOS POR CATEGORÍA
     datos_categorias = []
     if es_admin or es_gerente:
         categorias_gastos = Gasto.objects.filter(
+            gastos_edificio_q,
             fecha__gte=inicio_mes_actual,
             fecha__lte=fin_mes_actual,
-            **filters_gastos
+            estado='PAGADO',
         ).values('categoria__nombre').annotate(
             total=Sum('monto')
         ).order_by('-total')
-        
+
         for i, categoria in enumerate(categorias_gastos):
             datos_categorias.append({
                 'categoria': categoria['categoria__nombre'],
                 'monto': float(categoria['total']),
                 'color': colores_categorias[i % len(colores_categorias)]
             })
-    
+
     # ÚLTIMOS PAGOS Y GASTOS
     ultimos_pagos = Pago.objects.filter(**filters_pagos).select_related(
         'vivienda', 'vivienda__edificio'
     ).order_by('-fecha_pago')[:5]
-    
+
     ultimos_gastos = []
     if es_admin or es_gerente:
-        ultimos_gastos = Gasto.objects.filter(**filters_gastos).select_related(
+        gastos_ultimos_q = Gasto.objects.filter(gastos_edificio_q, estado='PAGADO')
+        ultimos_gastos = gastos_ultimos_q.select_related(
             'categoria'
         ).order_by('-fecha')[:5]
     
@@ -1649,18 +1761,34 @@ def dashboard_financiero(request):
             pass
     
     context = {
+        # Tarjeta 1: Saldo Disponible
+        'saldo_disponible': saldo_disponible,
+        'total_ingresos_historico': total_ingresos_historico,
+        'total_gastos_historico': total_gastos_historico,
+        # Tarjeta 2: Ingresos del Mes
         'ingresos_mes_actual': ingresos_mes_actual,
-        'gastos_mes_actual': gastos_mes_actual,
-        'balance_mes_actual': balance_mes_actual,
+        'desglose_ingresos': desglose_ingresos,
         'tendencia_ingresos': tendencia_ingresos,
+        # Tarjeta 3: Gastos Operativos
+        'gastos_mes_actual': gastos_mes_actual,
+        'gastos_pagados_mes': gastos_pagados_mes,
+        'gastos_pendientes_mes': gastos_pendientes_mes,
+        'total_salarios': total_salarios,
+        'num_empleados': num_empleados,
         'tendencia_gastos': tendencia_gastos,
+        # Tarjeta 4: Pendiente por Cobrar
+        'balance_mes_actual': balance_mes_actual,
         'cuotas_pendientes': cuotas_pendientes,
         'cuotas_vencidas': cuotas_vencidas,
         'total_pendiente': total_pendiente,
-        'datos_meses': json.dumps(datos_meses),  # ✅ CORREGIDO: Convertir a JSON
-        'datos_categorias': json.dumps(datos_categorias),  # ✅ CORREGIDO: Convertir a JSON
+        'pendientes_por_vivienda': list(pendientes_por_vivienda),
+        # Gráficos
+        'datos_meses': json.dumps(datos_meses),
+        'datos_categorias': json.dumps(datos_categorias),
+        # Tablas
         'ultimos_pagos': ultimos_pagos,
         'ultimos_gastos': ultimos_gastos,
+        # Filtros
         'edificios': edificios,
         'viviendas': viviendas,
         'edificio_seleccionado': edificio_id,

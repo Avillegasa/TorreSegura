@@ -60,95 +60,196 @@
     </div>
     {% endif %}
 
-    <!-- Resumen financiero -->
+    <!-- Resumen financiero - 4 tarjetas principales -->
     <div class="row mb-4">
+        <!-- TARJETA 1: Saldo Disponible -->
         <div class="col-md-3">
-            <div class="card text-white bg-primary stat-card">
+            <div class="card text-white stat-card" style="background: linear-gradient(135deg, #1a237e 0%, #283593 100%);">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h5 class="card-title">Ingresos del Mes</h5>
-                            <h2 class="card-text">${{ ingresos_mes_actual|floatformat:2 }}</h2>
+                            <h6 class="card-title mb-1 opacity-75">Saldo Disponible</h6>
+                            <h2 class="card-text mb-0">${{ saldo_disponible|floatformat:2 }}</h2>
                         </div>
-                        <i class="fas fa-coins fa-3x"></i>
+                        <i class="fas fa-wallet fa-3x opacity-50"></i>
                     </div>
-                    <div class="small mt-2">
+                    <hr class="my-2 opacity-25">
+                    <div class="small">
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75"><i class="fas fa-arrow-up"></i> Cobrado:</span>
+                            <span>${{ total_ingresos_historico|floatformat:2 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75"><i class="fas fa-arrow-down"></i> Gastado:</span>
+                            <span>${{ total_gastos_historico|floatformat:2 }}</span>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <span class="badge bg-light text-dark" style="font-size: 0.65rem;">
+                            <i class="fas fa-info-circle"></i> Pendiente conexion BNB
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TARJETA 2: Ingresos del Mes -->
+        <div class="col-md-3">
+            <div class="card text-white stat-card" style="background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 opacity-75">Ingresos del Mes</h6>
+                            <h2 class="card-text mb-0">${{ ingresos_mes_actual|floatformat:2 }}</h2>
+                        </div>
+                        <i class="fas fa-coins fa-3x opacity-50"></i>
+                    </div>
+                    <hr class="my-2 opacity-25">
+                    <div class="small">
+                        {% for item in desglose_ingresos %}
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75 text-truncate me-1">{{ item.concepto }}:</span>
+                            <span>${{ item.monto|floatformat:2 }}</span>
+                        </div>
+                        {% empty %}
+                        <span class="opacity-75"><i class="fas fa-info-circle"></i> Sin ingresos este mes</span>
+                        {% endfor %}
+                    </div>
+                    <div class="small mt-1">
                         {% if tendencia_ingresos > 0 %}
-                            <span class="text-white"><i class="fas fa-arrow-up"></i> +{{ tendencia_ingresos|floatformat:1 }}% vs mes anterior</span>
+                            <span class="badge bg-light text-success"><i class="fas fa-arrow-up"></i> +{{ tendencia_ingresos|floatformat:1 }}%</span>
                         {% elif tendencia_ingresos < 0 %}
-                            <span class="text-white"><i class="fas fa-arrow-down"></i> {{ tendencia_ingresos|floatformat:1 }}% vs mes anterior</span>
+                            <span class="badge bg-light text-danger"><i class="fas fa-arrow-down"></i> {{ tendencia_ingresos|floatformat:1 }}%</span>
                         {% else %}
-                            <span class="text-white"><i class="fas fa-equals"></i> Sin cambios</span>
+                            <span class="badge bg-light text-muted"><i class="fas fa-equals"></i> Sin cambios</span>
                         {% endif %}
+                        <span class="opacity-50" style="font-size: 0.65rem;">vs mes anterior</span>
                     </div>
                 </div>
             </div>
         </div>
-        
+
+        <!-- TARJETA 3: Gastos Operativos -->
         <div class="col-md-3">
-            <div class="card text-white bg-danger stat-card">
+            <div class="card text-white stat-card" style="background: linear-gradient(135deg, #b71c1c 0%, #c62828 100%);">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h5 class="card-title">Gastos del Mes</h5>
-                            <h2 class="card-text">${{ gastos_mes_actual|floatformat:2 }}</h2>
+                            <h6 class="card-title mb-1 opacity-75">Gastos Operativos</h6>
+                            <h2 class="card-text mb-0">${{ gastos_mes_actual|floatformat:2 }}</h2>
                         </div>
-                        <i class="fas fa-shopping-cart fa-3x"></i>
+                        <i class="fas fa-file-invoice-dollar fa-3x opacity-50"></i>
                     </div>
-                    <div class="small mt-2">
+                    <hr class="my-2 opacity-25">
+                    <div class="small">
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75"><i class="fas fa-check-circle"></i> Pagados:</span>
+                            <span>${{ gastos_pagados_mes|floatformat:2 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75"><i class="fas fa-clock"></i> Pendientes:</span>
+                            <span>${{ gastos_pendientes_mes|floatformat:2 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75"><i class="fas fa-users"></i> Planilla ({{ num_empleados }}):</span>
+                            <span>${{ total_salarios|floatformat:2 }}</span>
+                        </div>
+                    </div>
+                    <div class="small mt-1">
                         {% if tendencia_gastos > 0 %}
-                            <span class="text-white"><i class="fas fa-arrow-up"></i> +{{ tendencia_gastos|floatformat:1 }}% vs mes anterior</span>
+                            <span class="badge bg-light text-danger"><i class="fas fa-arrow-up"></i> +{{ tendencia_gastos|floatformat:1 }}%</span>
                         {% elif tendencia_gastos < 0 %}
-                            <span class="text-white"><i class="fas fa-arrow-down"></i> {{ tendencia_gastos|floatformat:1 }}% vs mes anterior</span>
+                            <span class="badge bg-light text-success"><i class="fas fa-arrow-down"></i> {{ tendencia_gastos|floatformat:1 }}%</span>
                         {% else %}
-                            <span class="text-white"><i class="fas fa-equals"></i> Sin cambios</span>
+                            <span class="badge bg-light text-muted"><i class="fas fa-equals"></i> Sin cambios</span>
                         {% endif %}
+                        <span class="opacity-50" style="font-size: 0.65rem;">vs mes anterior</span>
                     </div>
                 </div>
             </div>
         </div>
-        
+
+        <!-- TARJETA 4: Pendiente por Cobrar -->
         <div class="col-md-3">
-            <div class="card text-white bg-success stat-card">
+            <div class="card text-white stat-card" style="background: linear-gradient(135deg, #e65100 0%, #f57c00 100%);">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h5 class="card-title">Balance del Mes</h5>
-                            <h2 class="card-text">${{ balance_mes_actual|floatformat:2 }}</h2>
+                            <h6 class="card-title mb-1 opacity-75">Pendiente por Cobrar</h6>
+                            <h2 class="card-text mb-0">${{ total_pendiente|floatformat:2 }}</h2>
                         </div>
-                        <i class="fas fa-balance-scale fa-3x"></i>
+                        <i class="fas fa-exclamation-triangle fa-3x opacity-50"></i>
                     </div>
-                    <div class="small mt-2">
-                        {% if balance_mes_actual > 0 %}
-                            <span class="text-white">Superávit</span>
-                        {% elif balance_mes_actual < 0 %}
-                            <span class="text-white">Déficit</span>
-                        {% else %}
-                            <span class="text-white">Equilibrado</span>
-                        {% endif %}
+                    <hr class="my-2 opacity-25">
+                    <div class="small">
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75"><i class="fas fa-file-invoice-dollar"></i> Cuotas:</span>
+                            <span>{{ cuotas_pendientes }} pendientes</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-75"><i class="fas fa-exclamation-circle text-warning"></i> Vencidas:</span>
+                            <span>{{ cuotas_vencidas }} cuotas</span>
+                        </div>
                     </div>
+                    {% if balance_mes_actual >= 0 %}
+                    <div class="mt-1">
+                        <span class="badge bg-light text-success" style="font-size: 0.65rem;"><i class="fas fa-check"></i> Balance del mes: +${{ balance_mes_actual|floatformat:2 }}</span>
+                    </div>
+                    {% else %}
+                    <div class="mt-1">
+                        <span class="badge bg-light text-danger" style="font-size: 0.65rem;"><i class="fas fa-exclamation"></i> Deficit del mes: ${{ balance_mes_actual|floatformat:2 }}</span>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
-        
-        <div class="col-md-3">
-            <div class="card text-white bg-warning stat-card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h5 class="card-title">Pendiente por Cobrar</h5>
-                            <h2 class="card-text">${{ total_pendiente|floatformat:2 }}</h2>
-                        </div>
-                        <i class="fas fa-exclamation-circle fa-3x"></i>
-                    </div>
-                    <div class="small mt-2">
-                        <span class="me-2"><i class="fas fa-file-invoice-dollar"></i> {{ cuotas_pendientes }} cuotas</span>
-                        <span><i class="fas fa-clock"></i> {{ cuotas_vencidas }} vencidas</span>
+    </div>
+
+    <!-- Deudores por vivienda (top 10) -->
+    {% if pendientes_por_vivienda and es_admin or es_gerente %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-home text-warning"></i> Deuda por Vivienda</h5>
+                    <span class="badge bg-warning text-dark">Top 10 deudores</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Vivienda</th>
+                                    <th>Edificio</th>
+                                    <th class="text-center">Cuotas</th>
+                                    <th class="text-center">Vencidas</th>
+                                    <th class="text-end">Deuda Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for v in pendientes_por_vivienda %}
+                                <tr>
+                                    <td><i class="fas fa-door-open text-muted"></i> {{ v.vivienda__numero }} - Piso {{ v.vivienda__piso }}</td>
+                                    <td>{{ v.vivienda__edificio__nombre }}</td>
+                                    <td class="text-center"><span class="badge bg-secondary">{{ v.num_cuotas }}</span></td>
+                                    <td class="text-center">
+                                        {% if v.num_vencidas > 0 %}
+                                            <span class="badge bg-danger">{{ v.num_vencidas }}</span>
+                                        {% else %}
+                                            <span class="badge bg-success">0</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end fw-bold {% if v.num_vencidas > 0 %}text-danger{% endif %}">${{ v.total_deuda|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+    {% endif %}
 
     <div class="row mb-4">
         <!-- Gráfica de ingresos y gastos -->
