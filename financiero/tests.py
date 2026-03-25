@@ -100,10 +100,11 @@ class CuotaModelTest(TestCase):
         """Verificar que el método total_a_pagar funciona correctamente"""
         # Sin recargos
         self.assertEqual(self.cuota.total_a_pagar(), Decimal('100.00'))
-        
-        # Con recargos
-        self.cuota.recargo = Decimal('10.00')
-        self.cuota.save()
+
+        # Con recargos: usar update_fields para evitar que el pre_save signal
+        # recalcule el recargo (la cuota no está vencida en el test)
+        Cuota.objects.filter(pk=self.cuota.pk).update(recargo=Decimal('10.00'))
+        self.cuota.refresh_from_db()
         self.assertEqual(self.cuota.total_a_pagar(), Decimal('110.00'))
     
     def test_marcar_como_pagada(self):

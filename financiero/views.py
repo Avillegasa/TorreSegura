@@ -256,8 +256,27 @@ class CuotaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
         return form
 
     def form_valid(self, form):
-        messages.success(self.request, 'Cuota creada exitosamente.')
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        cuota = self.object
+        vivienda = cuota.vivienda
+
+        # Crear alerta de notificación para los residentes de la vivienda
+        from alertas.models import Alerta
+        descripcion = (
+            f"Se ha generado una nueva cuota para la vivienda {vivienda.numero} - {vivienda.edificio.nombre}: "
+            f"{cuota.concepto.nombre} por ${cuota.monto:.2f}. "
+            f"Fecha de vencimiento: {cuota.fecha_vencimiento.strftime('%d/%m/%Y')}."
+        )
+        Alerta.objects.create(
+            tipo='Aviso importante',
+            descripcion=descripcion,
+            enviado_por=self.request.user,
+            edificio=vivienda.edificio,
+            vivienda=vivienda,
+        )
+
+        messages.success(self.request, 'Cuota creada exitosamente. Se notificó a los residentes de la vivienda.')
+        return response
 
 class CuotaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Cuota
@@ -852,7 +871,7 @@ class GastoDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Gasto
     template_name = 'financiero/gasto_detail.html'
     context_object_name = 'gasto'
-    
+
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
@@ -860,6 +879,15 @@ class GastoDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
         if es_gerente:
             queryset = queryset.filter(registrado_por=user)
         return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        gasto = self.object
+        # Gastos similares: misma categoría, excluyendo el actual
+        context['gastos_similares'] = Gasto.objects.filter(
+            categoria=gasto.categoria
+        ).exclude(pk=gasto.pk).order_by('-fecha')[:5]
+        return context
 
 class GastoUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Gasto
@@ -1045,11 +1073,39 @@ class EstadoCuentaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, Create
         messages.success(self.request, 'Estado de cuenta creado exitosamente.')
         return response
 
+class EstadoCuentaUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
+    model = EstadoCuenta
+    form_class = EstadoCuentaForm
+    template_name = 'financiero/estado_cuenta_form.html'
+    success_url = reverse_lazy('estado-cuenta-list')
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            form.fields['vivienda'].queryset = Vivienda.objects.filter(
+                edificio=user.gerente.edificio, activo=True
+            ).select_related('edificio')
+        return form
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        self.object.calcular_totales()
+        messages.success(self.request, 'Estado de cuenta actualizado exitosamente.')
+        return response
+
 class EstadoCuentaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = EstadoCuenta
     template_name = 'financiero/estado_cuenta_detail.html'
     context_object_name = 'estado_cuenta'
-    
+
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
