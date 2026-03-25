@@ -144,8 +144,13 @@ class Cuota(models.Model):
     
     def clean(self):
         # Validar que la fecha de vencimiento sea posterior a la fecha de emisión
-        if self.fecha_vencimiento and self.fecha_emision and self.fecha_vencimiento < self.fecha_emision:
-            raise ValidationError({'fecha_vencimiento': _('La fecha de vencimiento debe ser posterior a la fecha de emisión.')})
+        if self.fecha_vencimiento and self.fecha_emision:
+            # fecha_emision puede ser datetime (default=timezone.now) o date; normalizar a date
+            emision = (self.fecha_emision.date()
+                       if hasattr(self.fecha_emision, 'date') and callable(self.fecha_emision.date)
+                       else self.fecha_emision)
+            if self.fecha_vencimiento < emision:
+                raise ValidationError({'fecha_vencimiento': _('La fecha de vencimiento debe ser posterior a la fecha de emisión.')})
     
     def save(self, *args, **kwargs):
         # Validación adicional al guardar

@@ -27,9 +27,9 @@
 
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            {{ form.vivienda|as_crispy_field }}
+                            {{ form.vivienda_seleccion|as_crispy_field }}
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="campo-monto" style="display:none;">
                             {{ form.monto|as_crispy_field }}
                         </div>
                     </div>
@@ -90,29 +90,61 @@
 
 {% block extra_js %}
 <script>
+    const VIVIENDAS_MONTO = {{ viviendas_monto_json|default:"{}"|safe }};
+    const TODAS = '__todas__';
+
     document.addEventListener('DOMContentLoaded', function() {
         const conceptoTipoSelect = document.getElementById('id_concepto_tipo');
         const campoPersonalizado = document.getElementById('campo-concepto-personalizado');
         const conceptoNombreInput = document.getElementById('id_concepto_nombre');
+        const viviendaSelect = document.getElementById('id_vivienda_seleccion');
+        const campoMonto = document.getElementById('campo-monto');
+        const montoInput = document.getElementById('id_monto');
 
-        function toggleConceptoPersonalizado() {
-            if (conceptoTipoSelect.value === 'personalizado') {
-                campoPersonalizado.style.display = '';
-                if (conceptoNombreInput) conceptoNombreInput.required = true;
-            } else {
-                campoPersonalizado.style.display = 'none';
-                if (conceptoNombreInput) {
-                    conceptoNombreInput.required = false;
-                    conceptoNombreInput.value = '';
+        function actualizarFormulario() {
+            const concepto = conceptoTipoSelect ? conceptoTipoSelect.value : 'expensas';
+            const viviendaVal = viviendaSelect ? viviendaSelect.value : '';
+
+            // Concepto personalizado
+            if (campoPersonalizado) {
+                if (concepto === 'personalizado') {
+                    campoPersonalizado.style.display = '';
+                    if (conceptoNombreInput) conceptoNombreInput.required = true;
+                } else {
+                    campoPersonalizado.style.display = 'none';
+                    if (conceptoNombreInput) { conceptoNombreInput.required = false; conceptoNombreInput.value = ''; }
+                }
+            }
+
+            // Campo monto
+            if (campoMonto && montoInput) {
+                if (concepto === 'expensas') {
+                    campoMonto.style.display = 'none';
+                    montoInput.required = false;
+
+                    // Autorellenar monto desde la vivienda seleccionada (solo para info)
+                    if (viviendaVal && viviendaVal !== TODAS && VIVIENDAS_MONTO[viviendaVal] !== undefined) {
+                        montoInput.value = VIVIENDAS_MONTO[viviendaVal] !== null
+                            ? VIVIENDAS_MONTO[viviendaVal].toFixed(2)
+                            : '';
+                    } else {
+                        montoInput.value = '';
+                    }
+                } else {
+                    // personalizado: mostrar campo monto
+                    campoMonto.style.display = '';
+                    montoInput.required = true;
+                    if (!montoInput.value || parseFloat(montoInput.value) <= 0) {
+                        montoInput.value = '';
+                    }
                 }
             }
         }
 
-        if (conceptoTipoSelect) {
-            conceptoTipoSelect.addEventListener('change', toggleConceptoPersonalizado);
-            // Ejecutar al cargar para manejar el caso de edición
-            toggleConceptoPersonalizado();
-        }
+        if (conceptoTipoSelect) conceptoTipoSelect.addEventListener('change', actualizarFormulario);
+        if (viviendaSelect) viviendaSelect.addEventListener('change', actualizarFormulario);
+
+        actualizarFormulario();
     });
 </script>
 {% endblock %}

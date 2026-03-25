@@ -21,8 +21,8 @@ class ViviendaForm(forms.ModelForm):
     class Meta:
         model = Vivienda
         # Excluir campos de baja para creación/edición normal
-        fields = ['edificio', 'numero', 'piso', 'metros_cuadrados', 
-                 'habitaciones', 'baños', 'estado']
+        fields = ['edificio', 'numero', 'piso', 'metros_cuadrados',
+                 'habitaciones', 'baños', 'estado', 'monto_expensa']
         
     def __init__(self, *args, **kwargs):
         # ✅ CORRECCIÓN 1: Extraer user_actual antes de llamar super()
@@ -63,6 +63,18 @@ class ViviendaForm(forms.ModelForm):
                     self.fields['edificio'].queryset = Edificio.objects.none()
             else:
                 self.fields['edificio'].queryset = Edificio.objects.all().order_by('nombre')
+    def clean(self):
+        cleaned_data = super().clean()
+        estado = cleaned_data.get('estado')
+        monto_expensa = cleaned_data.get('monto_expensa')
+
+        if estado == 'OCUPADO' and not monto_expensa:
+            self.add_error(
+                'monto_expensa',
+                'El monto de expensa es obligatorio cuando la vivienda está Ocupada.'
+            )
+        return cleaned_data
+
     def clean_piso(self):
         piso = self.cleaned_data.get('piso')
         edificio = self.cleaned_data.get('edificio')

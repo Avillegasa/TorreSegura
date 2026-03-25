@@ -48,6 +48,8 @@ class ConceptoCuotaForm(forms.ModelForm):
         return porcentaje
 
 class CuotaForm(forms.ModelForm):
+    TODAS_VIVIENDAS = '__todas__'
+
     CONCEPTO_TIPO_CHOICES = [
         ('expensas', 'Expensas'),
         ('personalizado', 'Otro (escribir concepto)'),
@@ -68,10 +70,15 @@ class CuotaForm(forms.ModelForm):
             'placeholder': 'Escribe el nombre del concepto',
         }),
     )
+    vivienda_seleccion = forms.ChoiceField(
+        label="Vivienda",
+        widget=forms.Select(attrs={'class': 'form-control', 'id': 'id_vivienda_seleccion'}),
+        help_text='Vivienda a la que se asigna la cuota',
+    )
 
     class Meta:
         model = Cuota
-        fields = ['vivienda', 'monto', 'fecha_vencimiento', 'notas']
+        fields = ['monto', 'fecha_vencimiento', 'notas']
         widgets = {
             'fecha_vencimiento': forms.DateInput(attrs={'type': 'date'}),
             'notas': forms.Textarea(attrs={'rows': 3}),
@@ -79,71 +86,101 @@ class CuotaForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
-        self.fields['vivienda'].queryset = Vivienda.objects.filter(activo=True).select_related('edificio')
-        self.fields['vivienda'].help_text = 'Vivienda a la que se asigna la cuota'
 
-        for field_name, field in self.fields.items():
-            if field_name not in ['concepto_tipo', 'concepto_nombre']:
-                field.widget.attrs['class'] = 'form-control'
+        # Viviendas ocupadas filtradas por rol
+        qs = Vivienda.objects.filter(activo=True, estado='OCUPADO').select_related('edificio')
+        if (self.user and hasattr(self.user, 'rol') and self.user.rol and
+                self.user.rol.nombre == 'Gerente' and
+                hasattr(self.user, 'gerente') and self.user.gerente and self.user.gerente.edificio):
+            qs = qs.filter(edificio=self.user.gerente.edificio)
+        self._viviendas_ocupadas = list(qs)
 
-        if not kwargs.get('instance'):
+        # Choices: "todas" solo en creación
+        es_edicion = bool(self.instance and self.instance.pk)
+        choices = [('', '---------')]
+        if not es_edicion:
+            choices.append((self.TODAS_VIVIENDAS, '--- Todas las viviendas ocupadas ---'))
+        choices += [(str(v.pk), f"{v.numero} - {v.edificio.nombre}") for v in self._viviendas_ocupadas]
+        self.fields['vivienda_seleccion'].choices = choices
+
+        # Bootstrap para campos del Meta
+        for field_name in ['monto', 'fecha_vencimiento', 'notas']:
+            self.fields[field_name].widget.attrs['class'] = 'form-control'
+
+        # Monto no requerido a nivel form (se valida en clean según concepto)
+        self.fields['monto'].required = False
+
+        if not es_edicion:
             self.fields['fecha_vencimiento'].initial = timezone.now().date() + timezone.timedelta(days=30)
         else:
-            # Pre-poblar concepto_tipo/nombre desde la instancia existente
-            instance = kwargs['instance']
-            nombre_concepto = instance.concepto.nombre
+            nombre_concepto = self.instance.concepto.nombre
             if nombre_concepto.lower() == 'expensas':
                 self.fields['concepto_tipo'].initial = 'expensas'
             else:
                 self.fields['concepto_tipo'].initial = 'personalizado'
                 self.fields['concepto_nombre'].initial = nombre_concepto
+            self.fields['vivienda_seleccion'].initial = str(self.instance.vivienda_id)
 
     def clean(self):
         cleaned_data = super().clean()
         concepto_tipo = cleaned_data.get('concepto_tipo')
         concepto_nombre = cleaned_data.get('concepto_nombre', '').strip()
-        vivienda = cleaned_data.get('vivienda')
+        vivienda_val = cleaned_data.get('vivienda_seleccion', '')
+        monto = cleaned_data.get('monto')
+
+        if not vivienda_val:
+            raise ValidationError({'vivienda_seleccion': 'Selecciona una vivienda.'})
 
         if concepto_tipo == 'personalizado' and not concepto_nombre:
             raise ValidationError({'concepto_nombre': 'Debe ingresar un nombre para el concepto personalizado.'})
 
-        if vivienda and not vivienda.activo:
-            raise ValidationError({'vivienda': 'No se pueden generar cuotas para viviendas dadas de baja.'})
+        if concepto_tipo == 'personalizado' and (not monto or monto <= 0):
+            raise ValidationError({'monto': 'Ingresa el monto para este concepto.'})
+
+        # Cargar objeto vivienda para caso específico
+        if vivienda_val and vivienda_val != self.TODAS_VIVIENDAS:
+            try:
+                vivienda_obj = Vivienda.objects.get(pk=int(vivienda_val), activo=True)
+            except (Vivienda.DoesNotExist, ValueError):
+                raise ValidationError({'vivienda_seleccion': 'Vivienda no válida.'})
+
+            if concepto_tipo == 'expensas' and not vivienda_obj.monto_expensa:
+                raise ValidationError({
+                    'vivienda_seleccion': (
+                        f'La vivienda {vivienda_obj.numero} no tiene monto de expensa configurado. '
+                        'Edita la vivienda para asignarle un monto.'
+                    )
+                })
+            cleaned_data['_vivienda_obj'] = vivienda_obj
 
         return cleaned_data
-
-    def clean_monto(self):
-        monto = self.cleaned_data.get('monto')
-        if monto is not None and monto <= 0:
-            raise ValidationError('El monto debe ser mayor a cero.')
-        return monto
 
     def save(self, commit=True):
         cuota = super().save(commit=False)
 
         concepto_tipo = self.cleaned_data.get('concepto_tipo')
-        if concepto_tipo == 'personalizado':
-            nombre = self.cleaned_data.get('concepto_nombre', '').strip()
-        else:
-            nombre = 'Expensas'
+        vivienda_val = self.cleaned_data.get('vivienda_seleccion', '')
 
+        nombre_concepto = ('Expensas' if concepto_tipo == 'expensas'
+                           else self.cleaned_data.get('concepto_nombre', '').strip())
         concepto, _ = ConceptoCuota.objects.get_or_create(
-            nombre=nombre,
-            defaults={
-                'monto_base': cuota.monto or 0,
-                'periodicidad': 'MENSUAL',
-                'activo': True,
-            }
+            nombre=nombre_concepto,
+            defaults={'monto_base': 0, 'periodicidad': 'MENSUAL', 'activo': True}
         )
         cuota.concepto = concepto
 
-        # fecha_emision se asigna automáticamente (default=timezone.now en el modelo)
-        # Solo forzarla en creación nueva
+        if vivienda_val != self.TODAS_VIVIENDAS:
+            vivienda_obj = self.cleaned_data.get('_vivienda_obj')
+            cuota.vivienda = vivienda_obj
+            if concepto_tipo == 'expensas':
+                cuota.monto = vivienda_obj.monto_expensa
+
         if not cuota.pk:
             cuota.fecha_emision = timezone.now().date()
 
-        if commit:
+        if commit and vivienda_val != self.TODAS_VIVIENDAS:
             cuota.save()
 
         return cuota
