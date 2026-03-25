@@ -42,4 +42,7 @@ staticfiles/
 .cache/
 
 node_modules
-node_modules
+
+# Claude Code
+.claude/
+CLAUDE.md
