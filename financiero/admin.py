@@ -6,7 +6,8 @@ from django.db import models
 from django.utils import timezone
 from .models import (
     ConceptoCuota, Cuota, Pago, PagoCuota,
-    CategoriaGasto, Gasto, EstadoCuenta
+    CategoriaGasto, Gasto, EstadoCuenta,
+    CuentaBancaria, PagoQR
 )
 
 @admin.register(ConceptoCuota)
@@ -378,6 +379,39 @@ PagoAdmin.inlines = [PagoCuotaInline]
 CategoriaGastoAdmin.inlines = [GastoInline]
 
 # ===== CONFIGURACIÓN ADICIONAL =====
+
+@admin.register(CuentaBancaria)
+class CuentaBancariaAdmin(admin.ModelAdmin):
+    list_display = ['edificio', 'banco', 'numero_cuenta', 'titular', 'activa', 'verificada', 'fecha_registro']
+    list_filter = ['activa', 'verificada', 'banco']
+    search_fields = ['edificio__nombre', 'titular', 'numero_cuenta']
+    readonly_fields = ['verificada', 'fecha_registro', 'fecha_actualizacion', 'registrado_por']
+
+    fieldsets = (
+        ('Edificio', {'fields': ('edificio',)}),
+        ('Datos Bancarios', {'fields': ('banco', 'numero_cuenta', 'titular')}),
+        ('Credenciales API BNB', {
+            'fields': ('bnb_account_id', 'bnb_authorization_id'),
+            'description': 'Credenciales proporcionadas por BNB para la generación de QR.',
+        }),
+        ('Estado', {'fields': ('activa', 'verificada')}),
+        ('Auditoría', {'fields': ('registrado_por', 'fecha_registro', 'fecha_actualizacion')}),
+    )
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.registrado_por = request.user
+        obj.save()
+
+
+@admin.register(PagoQR)
+class PagoQRAdmin(admin.ModelAdmin):
+    list_display = ['qr_id', 'vivienda', 'monto', 'qr_estado', 'fecha_creacion', 'fecha_expiracion']
+    list_filter = ['qr_estado', 'fecha_creacion']
+    search_fields = ['qr_id', 'vivienda__numero', 'glosa']
+    readonly_fields = ['qr_id', 'qr_image', 'fecha_creacion', 'fecha_actualizacion']
+    ordering = ['-fecha_creacion']
+
 
 # Personalizar el título del admin
 admin.site.site_header = "Torre Segura - Administración Financiera"

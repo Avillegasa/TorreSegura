@@ -20,6 +20,11 @@ environ.Env.read_env(env_file=os.path.join(BASE_DIR, '.env'))
 # Secreto dedicado para firmar QRs (opcional). Si no se define, se usa SECRET_KEY como fallback.
 QR_SECRET_KEY = env('QR_SECRET_KEY', default=None)
 
+# ─── BNB Payment Gateway (QR Simple) ─────────────────────────────────
+BNB_SANDBOX = env.bool('BNB_SANDBOX', default=True)
+BNB_ACCOUNT_ID = env('BNB_ACCOUNT_ID', default='')
+BNB_AUTHORIZATION_ID = env('BNB_AUTHORIZATION_ID', default='')
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 

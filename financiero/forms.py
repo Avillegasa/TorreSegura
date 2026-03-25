@@ -5,8 +5,8 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from decimal import Decimal
 from .models import (
-    ConceptoCuota, Cuota, Pago, PagoCuota, 
-    CategoriaGasto, Gasto, EstadoCuenta
+    ConceptoCuota, Cuota, Pago, PagoCuota,
+    CategoriaGasto, Gasto, EstadoCuenta, CuentaBancaria
 )
 from viviendas.models import Vivienda, Residente, Edificio
 
@@ -500,6 +500,61 @@ class GenerarEstadosCuentaForm(forms.Form):
             raise ValidationError({'fecha_fin': _('La fecha de fin debe ser posterior a la fecha de inicio.')})
         
         return cleaned_data
+
+class CuentaBancariaForm(forms.ModelForm):
+    class Meta:
+        model = CuentaBancaria
+        fields = [
+            'edificio', 'banco', 'numero_cuenta', 'titular',
+            'bnb_account_id', 'bnb_authorization_id', 'activa',
+        ]
+        widgets = {
+            'bnb_account_id': forms.PasswordInput(attrs={'autocomplete': 'off'}),
+            'bnb_authorization_id': forms.PasswordInput(attrs={'autocomplete': 'off'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name, field in self.fields.items():
+            if field_name != 'activa':
+                field.widget.attrs['class'] = 'form-control'
+        self.fields['activa'].widget.attrs['class'] = 'form-check-input'
+
+        # Solo edificios que no tienen cuenta bancaria (excepto el actual si estamos editando)
+        from django.db.models import Q as QFilter
+        qs = Edificio.objects.all()
+        if self.instance and self.instance.pk:
+            qs = qs.filter(
+                QFilter(cuenta_bancaria__isnull=True) |
+                QFilter(pk=self.instance.edificio_id)
+            )
+        else:
+            qs = qs.filter(cuenta_bancaria__isnull=True)
+        self.fields['edificio'].queryset = qs
+
+        self.fields['bnb_account_id'].help_text = 'Credencial proporcionada por BNB'
+        self.fields['bnb_authorization_id'].help_text = 'Credencial proporcionada por BNB'
+        self.fields['numero_cuenta'].help_text = 'Ej: 1520468087'
+
+        # Si estamos editando, mostrar placeholder para no revelar la credencial
+        if self.instance and self.instance.pk:
+            if self.instance.bnb_account_id:
+                self.fields['bnb_account_id'].widget.attrs['placeholder'] = '••••••• (guardado)'
+                self.fields['bnb_account_id'].required = False
+            if self.instance.bnb_authorization_id:
+                self.fields['bnb_authorization_id'].widget.attrs['placeholder'] = '••••••• (guardado)'
+                self.fields['bnb_authorization_id'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        # Si editando y campos vacíos, mantener los valores anteriores
+        if self.instance and self.instance.pk:
+            if not cleaned_data.get('bnb_account_id') and self.instance.bnb_account_id:
+                cleaned_data['bnb_account_id'] = self.instance.bnb_account_id
+            if not cleaned_data.get('bnb_authorization_id') and self.instance.bnb_authorization_id:
+                cleaned_data['bnb_authorization_id'] = self.instance.bnb_authorization_id
+        return cleaned_data
+
 
 # ===== FORMULARIOS ADICIONALES PARA FILTROS =====
 

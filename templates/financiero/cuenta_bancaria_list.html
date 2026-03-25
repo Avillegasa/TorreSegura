@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Cuentas Bancarias BNB | Torre Segura{% endblock %}
+{% block header %}Cuentas Bancarias BNB{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .status-ok { background: #d4edda; color: #155724; }
+    .status-warn { background: #fff3cd; color: #856404; }
+    .status-off { background: #f8d7da; color: #721c24; }
+    .cuenta-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 24px;
+        margin-bottom: 20px;
+        border-left: 4px solid #2c3e50;
+    }
+    .cuenta-card.verificada { border-left-color: #27ae60; }
+    .cuenta-card.no-verificada { border-left-color: #f39c12; }
+    .cuenta-card.inactiva { border-left-color: #e74c3c; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <p class="text-muted mb-0">Configurar las cuentas bancarias BNB donde se reciben los pagos de expensas por QR.</p>
+    <a href="{% url 'cuenta-bancaria-create' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Nueva Cuenta
+    </a>
+</div>
+
+{% if cuentas %}
+    {% for cuenta in cuentas %}
+    <div class="cuenta-card {% if not cuenta.activa %}inactiva{% elif cuenta.verificada %}verificada{% else %}no-verificada{% endif %}">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h5 class="mb-1">
+                    <i class="fas fa-building me-2"></i>{{ cuenta.edificio.nombre }}
+                </h5>
+                <p class="text-muted mb-2">{{ cuenta.get_banco_display }} - Cuenta: <strong>{{ cuenta.numero_cuenta }}</strong></p>
+                <p class="mb-1"><strong>Titular:</strong> {{ cuenta.titular }}</p>
+                <p class="mb-0 text-muted" style="font-size: 0.85rem;">
+                    Registrada: {{ cuenta.fecha_registro|date:"d/m/Y H:i" }}
+                    {% if cuenta.registrado_por %} por {{ cuenta.registrado_por.get_full_name|default:cuenta.registrado_por.username }}{% endif %}
+                </p>
+            </div>
+            <div class="text-end">
+                {% if not cuenta.activa %}
+                    <span class="status-badge status-off"><i class="fas fa-times-circle"></i> Inactiva</span>
+                {% elif cuenta.verificada %}
+                    <span class="status-badge status-ok"><i class="fas fa-check-circle"></i> Verificada</span>
+                {% elif cuenta.tiene_credenciales %}
+                    <span class="status-badge status-warn"><i class="fas fa-exclamation-triangle"></i> Sin verificar</span>
+                {% else %}
+                    <span class="status-badge status-off"><i class="fas fa-key"></i> Sin credenciales</span>
+                {% endif %}
+
+                <div class="mt-3">
+                    <a href="{% url 'cuenta-bancaria-update' cuenta.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-edit"></i> Editar
+                    </a>
+                    {% if cuenta.tiene_credenciales %}
+                    <button class="btn btn-sm btn-outline-success" onclick="verificarConexion({{ cuenta.pk }}, this)">
+                        <i class="fas fa-plug"></i> Probar Conexion
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="text-center p-5" style="background: white; border-radius: 12px;">
+        <i class="fas fa-university" style="font-size: 3rem; color: #bdc3c7;"></i>
+        <h5 class="mt-3 text-muted">No hay cuentas bancarias configuradas</h5>
+        <p class="text-muted">Agrega una cuenta BNB para habilitar pagos por QR en tus edificios.</p>
+        <a href="{% url 'cuenta-bancaria-create' %}" class="btn btn-primary mt-2">
+            <i class="fas fa-plus"></i> Configurar primera cuenta
+        </a>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function verificarConexion(pk, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+
+    fetch(`/financiero/cuentas-bancarias/${pk}/verificar-conexion/`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Conexion exitosa: ' + data.message);
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(() => alert('Error de red'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-plug"></i> Probar Conexion';
+        });
+}
+</script>
+{% endblock %}

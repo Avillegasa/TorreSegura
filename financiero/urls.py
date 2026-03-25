@@ -54,6 +54,10 @@ urlpatterns = [
     path('estados-cuenta/<int:pk>/pdf/', views.estado_cuenta_pdf, name='estado-cuenta-pdf'),
     path('estados-cuenta/<int:pk>/enviar/', views.enviar_estado_cuenta, name='estado-cuenta-enviar'),
     path('estados-cuenta/generar-masivos/', views.generar_estados_cuenta, name='estado-cuenta-generar-masivos'),
-    
-    
+
+    # Cuenta Bancaria BNB (solo Admin)
+    path('cuentas-bancarias/', views.CuentaBancariaListView.as_view(), name='cuenta-bancaria-list'),
+    path('cuentas-bancarias/crear/', views.CuentaBancariaCreateView.as_view(), name='cuenta-bancaria-create'),
+    path('cuentas-bancarias/<int:pk>/editar/', views.CuentaBancariaUpdateView.as_view(), name='cuenta-bancaria-update'),
+    path('cuentas-bancarias/<int:pk>/verificar-conexion/', views.verificar_conexion_bnb, name='cuenta-bancaria-verificar'),
 ]

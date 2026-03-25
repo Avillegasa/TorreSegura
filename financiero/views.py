@@ -25,12 +25,13 @@ from reportlab.lib.pagesizes import letter
 from usuarios.views import AccesoWebPermitidoMixin
 
 from .models import (
-    ConceptoCuota, Cuota, Pago, PagoCuota, 
-    CategoriaGasto, Gasto, EstadoCuenta
+    ConceptoCuota, Cuota, Pago, PagoCuota,
+    CategoriaGasto, Gasto, EstadoCuenta, CuentaBancaria
 )
 from .forms import (
     ConceptoCuotaForm, CuotaForm, GenerarCuotasForm, PagoForm,
-    CategoriaGastoForm, GastoForm, EstadoCuentaForm, GenerarEstadosCuentaForm
+    CategoriaGastoForm, GastoForm, EstadoCuentaForm, GenerarEstadosCuentaForm,
+    CuentaBancariaForm
 )
 from viviendas.models import Vivienda, Edificio, Residente
 from usuarios.models import Usuario
@@ -1875,3 +1876,140 @@ def dashboard_financiero_api(request):
         'datos_meses': datos_meses,
         'datos_categorias': datos_categorias
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Cuenta Bancaria BNB — Administrador y Gerente
+# ═══════════════════════════════════════════════════════════════════════
+
+def _check_admin_o_gerente(user):
+    """Verifica que el usuario sea Admin o Gerente. Lanza PermissionDenied si no."""
+    rol = getattr(getattr(user, 'rol', None), 'nombre', None)
+    if rol not in ('Administrador', 'Gerente'):
+        raise PermissionDenied
+    return rol
+
+
+def _edificio_del_gerente(user):
+    """Retorna el edificio del Gerente, o None si es Admin."""
+    if hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+        return user.gerente.edificio
+    return None
+
+
+class CuentaBancariaListView(LoginRequiredMixin, ListView):
+    model = CuentaBancaria
+    template_name = 'financiero/cuenta_bancaria_list.html'
+    context_object_name = 'cuentas'
+
+    def dispatch(self, request, *args, **kwargs):
+        _check_admin_o_gerente(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        qs = CuentaBancaria.objects.select_related('edificio', 'registrado_por')
+        # Gerente solo ve la cuenta de su edificio
+        edificio = _edificio_del_gerente(self.request.user)
+        if edificio:
+            qs = qs.filter(edificio=edificio)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['es_admin'] = self.request.user.rol.nombre == 'Administrador'
+        ctx['edificio_gerente'] = _edificio_del_gerente(self.request.user)
+        return ctx
+
+
+class CuentaBancariaCreateView(LoginRequiredMixin, CreateView):
+    model = CuentaBancaria
+    form_class = CuentaBancariaForm
+    template_name = 'financiero/cuenta_bancaria_form.html'
+    success_url = reverse_lazy('cuenta-bancaria-list')
+
+    def dispatch(self, request, *args, **kwargs):
+        _check_admin_o_gerente(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        # Gerente: solo puede crear para su edificio
+        edificio = _edificio_del_gerente(self.request.user)
+        if edificio:
+            form.fields['edificio'].queryset = Edificio.objects.filter(pk=edificio.pk)
+            form.fields['edificio'].initial = edificio
+        return form
+
+    def form_valid(self, form):
+        # Gerente: asegurar que solo crea para su edificio
+        edificio = _edificio_del_gerente(self.request.user)
+        if edificio and form.instance.edificio != edificio:
+            raise PermissionDenied
+        form.instance.registrado_por = self.request.user
+        messages.success(self.request, 'Cuenta bancaria registrada exitosamente.')
+        return super().form_valid(form)
+
+
+class CuentaBancariaUpdateView(LoginRequiredMixin, UpdateView):
+    model = CuentaBancaria
+    form_class = CuentaBancariaForm
+    template_name = 'financiero/cuenta_bancaria_form.html'
+    success_url = reverse_lazy('cuenta-bancaria-list')
+
+    def dispatch(self, request, *args, **kwargs):
+        _check_admin_o_gerente(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        qs = CuentaBancaria.objects.all()
+        edificio = _edificio_del_gerente(self.request.user)
+        if edificio:
+            qs = qs.filter(edificio=edificio)
+        return qs
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Cuenta bancaria actualizada exitosamente.')
+        return super().form_valid(form)
+
+
+@login_required
+def verificar_conexion_bnb(request, pk):
+    """Prueba la conexión con BNB usando las credenciales de la cuenta."""
+    _check_admin_o_gerente(request.user)
+
+    # Gerente solo puede verificar la cuenta de su edificio
+    edificio = _edificio_del_gerente(request.user)
+    if edificio:
+        cuenta = get_object_or_404(CuentaBancaria, pk=pk, edificio=edificio)
+    else:
+        cuenta = get_object_or_404(CuentaBancaria, pk=pk)
+
+    if not cuenta.tiene_credenciales():
+        return JsonResponse({
+            'success': False,
+            'message': 'La cuenta no tiene credenciales BNB configuradas.',
+        })
+
+    from .services.bnb_payment import BNBPaymentService, BNBPaymentError
+
+    try:
+        servicio = BNBPaymentService(
+            account_id=cuenta.bnb_account_id,
+            authorization_id=cuenta.bnb_authorization_id,
+        )
+        servicio._get_token()
+
+        cuenta.verificada = True
+        cuenta.save(update_fields=['verificada'])
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Conexión exitosa con BNB. Cuenta verificada.',
+        })
+    except BNBPaymentError as e:
+        cuenta.verificada = False
+        cuenta.save(update_fields=['verificada'])
+        return JsonResponse({
+            'success': False,
+            'message': f'Error de conexión: {e}',
+        })

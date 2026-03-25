@@ -14,6 +14,7 @@ urlpatterns = [
     
     # Nueva ruta para cambio de estado desde web
     path('web/alertas/<int:pk>/estado/', views.cambiar_estado_web, name='cambiar_estado_web'),
+
     # Polling de alertas nuevas (web)
     path('web/alertas/nuevas/', views.alertas_nuevas_web, name='alertas_nuevas_web'),
     
