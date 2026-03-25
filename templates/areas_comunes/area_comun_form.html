@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+    {% if form.instance.pk %}Editar{% else %}Nueva{% endif %} Area Comun | Torre Segura
+{% endblock %}
+
+{% block header %}
+    {% if form.instance.pk %}Editar{% else %}Nueva{% endif %} Area Comun
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card shadow">
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="row">
+                        <div class="col-md-6">
+                            {{ form.nombre|as_crispy_field }}
+                        </div>
+                        <div class="col-md-6">
+                            {{ form.edificio|as_crispy_field }}
+                        </div>
+                    </div>
+                    {{ form.descripcion|as_crispy_field }}
+                    <div class="row">
+                        <div class="col-md-4">
+                            {{ form.capacidad_maxima|as_crispy_field }}
+                        </div>
+                        <div class="col-md-4">
+                            {{ form.horario_inicio|as_crispy_field }}
+                        </div>
+                        <div class="col-md-4">
+                            {{ form.horario_fin|as_crispy_field }}
+                        </div>
+                    </div>
+                    {{ form.imagen|as_crispy_field }}
+                    <div class="form-check mt-3">
+                        {{ form.activo }}
+                        <label class="form-check-label" for="id_activo">Activa</label>
+                    </div>
+
+                    <div class="mt-4 d-flex justify-content-between">
+                        <a href="{% url 'area-comun-list' %}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Guardar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

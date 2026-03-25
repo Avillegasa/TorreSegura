@@ -7,6 +7,9 @@ from django.template.loader import render_to_string
 from django.http import HttpResponse
 from django.contrib import messages
 from django.utils import timezone
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.decorators import login_required
+from usuarios.views import AccesoWebPermitidoMixin, AdministradorRequeridoMixin
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -28,13 +31,19 @@ except ImportError:
     WEASYPRINT_AVAILABLE = False
     print("⚠️ WeasyPrint no disponible - Funcionalidad PDF deshabilitada")
 
-class ReporteListView(ListView):
+class ReporteListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Reporte
     template_name = 'reportes/reporte_list.html'
     context_object_name = 'reportes'
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+
+        # Gerente solo ve reportes de su edificio
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+
         tipo = self.request.GET.get('tipo')
         dados_baja = self.request.GET.get('dados_baja')
         solo_activos = self.request.GET.get('solo_activos')
@@ -86,7 +95,7 @@ class ReporteListView(ListView):
         
         return context
 
-class ReporteCreateView(CreateView):
+class ReporteCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
     model = Reporte
     form_class = ReporteForm
     template_name = 'reportes/reporte_form.html'
@@ -106,20 +115,31 @@ class ReporteCreateView(CreateView):
 
     def form_valid(self, form):
         form.instance.creado_por = self.request.user
+        # Gerente: forzar su edificio
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            form.instance.edificio = user.gerente.edificio
         return super().form_valid(form)
 
-class ReporteUpdateView(UpdateView):
+class ReporteUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Reporte
     form_class = ReporteForm
     template_name = 'reportes/reporte_form.html'
     success_url = reverse_lazy('reporte-list')
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['tipo_reporte'] = self.object.tipo
         return context
 
-class ReporteDeleteView(DeleteView):
+class ReporteDeleteView(LoginRequiredMixin, AdministradorRequeridoMixin, DeleteView):
     model = Reporte
     template_name = 'reportes/reporte_confirm_delete.html'
     success_url = reverse_lazy('reporte-list')
@@ -130,12 +150,29 @@ class ReporteDeleteView(DeleteView):
         self.object.save()
         return redirect(self.success_url)
 
+@login_required
 def reporte_preview(request, pk):
     from viviendas.models import Residente, Vivienda
     from personal.models import Empleado
     from accesos.models import Visita
+    
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
 
     reporte = get_object_or_404(Reporte, pk=pk)
+    
+    # Gerente solo puede ver reportes de su edificio
+    if rol_nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+        if reporte.edificio and reporte.edificio != user.gerente.edificio:
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied
+        edificio_filter = user.gerente.edificio
+    else:
+        edificio_filter = None
+    
     context = {
         'reporte': reporte,
         'fecha_generacion': timezone.now(),
@@ -143,6 +180,8 @@ def reporte_preview(request, pk):
 
     if reporte.tipo == 'RESIDENTES':
         residentes = Residente.objects.all()
+        if edificio_filter:
+            residentes = residentes.filter(vivienda__edificio=edificio_filter)
         context['residentes'] = residentes
         context['total_residentes'] = residentes.count()
         context['activos'] = residentes.filter(activo=True).count()
@@ -150,6 +189,8 @@ def reporte_preview(request, pk):
         context['inquilinos'] = residentes.filter(es_propietario=False).count()
     elif reporte.tipo == 'VIVIENDAS':
         viviendas = Vivienda.objects.all()
+        if edificio_filter:
+            viviendas = viviendas.filter(edificio=edificio_filter)
         context['viviendas'] = viviendas
         context['total_viviendas'] = viviendas.count()
         context['ocupadas'] = viviendas.filter(estado='OCUPADO').count()
@@ -161,12 +202,16 @@ def reporte_preview(request, pk):
             context['porcentaje_ocupacion'] = 0
     elif reporte.tipo == 'ACCESOS':
         visitas = Visita.objects.all()
+        if edificio_filter:
+            visitas = visitas.filter(vivienda_destino__edificio=edificio_filter)
         context['visitas'] = visitas
         context['total_visitas'] = visitas.count()
         context['visitas_activas'] = visitas.filter(fecha_hora_salida__isnull=True).count()
         context['visitas_finalizadas'] = visitas.filter(fecha_hora_salida__isnull=False).count()
     elif reporte.tipo == 'PERSONAL':
         empleados = Empleado.objects.all()
+        if edificio_filter:
+            empleados = empleados.filter(edificio=edificio_filter)
         context['empleados'] = empleados
         context['total_empleados'] = empleados.count()
         context['activos'] = empleados.filter(activo=True).count()
@@ -215,13 +260,31 @@ def reporte_preview(request, pk):
 
     return render(request, 'reportes/reporte_preview.html', context)
 
+@login_required
 def reporte_toggle_favorito(request, pk):
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+    if request.method != 'POST':
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
     reporte = get_object_or_404(Reporte, pk=pk)
     reporte.es_favorito = not reporte.es_favorito
     reporte.save()
     return redirect('reporte-list')
 
+@login_required
 def reporte_duplicar(request, pk):
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+    if request.method != 'POST':
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
     reporte_original = get_object_or_404(Reporte, pk=pk)
     
     # Crear una copia del reporte
@@ -238,7 +301,15 @@ def reporte_duplicar(request, pk):
     
     return redirect('reporte-list')
 
+@login_required
 def reporte_pdf(request, pk):
+    # Check role
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+    
     # Check if WeasyPrint is available
     if not WEASYPRINT_AVAILABLE:
         messages.error(request, "Funcionalidad PDF no disponible en este sistema. Instale WeasyPrint para usar esta función.")
@@ -421,7 +492,16 @@ def reporte_pdf(request, pk):
         messages.error(request, f"Error generando PDF: {str(e)}")
         return redirect('reporte-list')
 
+@login_required
 def reporte_reactivar(request, pk):
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+    if request.method != 'POST':
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
     reporte = get_object_or_404(Reporte, pk=pk)
     reporte.activo = True
     reporte.save()
@@ -443,10 +523,17 @@ def generar_grafico_barras(labels, values, titulo):
         print(f"Error generando gráfico: {e}")
         return None
 
+@login_required
 def reporte_descargar(request, pk):
     from viviendas.models import Residente, Vivienda
     from personal.models import Empleado
     from accesos.models import Visita
+    
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
 
     reporte = get_object_or_404(Reporte, pk=pk)
     formato = request.GET.get('formato', reporte.formato_preferido or 'PDF').upper()

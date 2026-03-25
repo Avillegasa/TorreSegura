@@ -47,16 +47,11 @@ class UsuarioCreationForm(UserCreationForm):
         # Initialize rol_obj as None to avoid UnboundLocalError
         rol_obj = None
         
-        # Si el rol "Personal" está presente en los datos o instancia, hacer campos opcionales
+        # Determinar el rol seleccionado para ajustes dinámicos
         rol_data = self.data.get('rol') or (self.instance.rol.id if self.instance and self.instance.rol else None)
         try:
             if rol_data:
                 rol_obj = Rol.objects.get(id=rol_data)
-                if rol_obj.nombre == "Personal":
-                    self.fields['username'].required = False
-                    self.fields['email'].required = False
-                    self.fields['password1'].required = False
-                    self.fields['password2'].required = False
         except Rol.DoesNotExist:
             pass
 
@@ -76,10 +71,18 @@ class UsuarioCreationForm(UserCreationForm):
                 edificio=self.instance.residente.vivienda.edificio
             )
 
-        # Filtrar roles si el usuario actual es Gerente (no puede ver "Administrador")
-        if self.user_actual and hasattr(self.user_actual, 'rol'):
+        # Filtrar roles si el usuario actual es Gerente
+        if self.user_actual and hasattr(self.user_actual, 'rol') and self.user_actual.rol:
             if self.user_actual.rol.nombre == 'Gerente':
-                self.fields['rol'].queryset = Rol.objects.exclude(nombre='Administrador')
+                self.fields['rol'].queryset = Rol.objects.filter(nombre__in=['Residente', 'Vigilante', 'Personal'])
+                # Gerente solo puede asignar a su edificio
+                if hasattr(self.user_actual, 'gerente') and self.user_actual.gerente.edificio:
+                    edificio = self.user_actual.gerente.edificio
+                    self.fields['edificio'].queryset = Edificio.objects.filter(pk=edificio.pk)
+                    self.fields['edificio'].initial = edificio
+                    self.fields['vivienda'].queryset = Vivienda.objects.filter(
+                        edificio=edificio, estado='DESOCUPADO', activo=True
+                    )
 
         # Check if rol_obj exists before using it - FIX for UnboundLocalError
         if rol_obj and rol_obj.nombre in ["Personal", "Vigilante", "Gerente"]:
@@ -173,9 +176,6 @@ class UsuarioCreationForm(UserCreationForm):
 
     def clean_username(self):
         username = self.cleaned_data.get('username', '').strip().lower()
-        rol = self.cleaned_data.get('rol')
-        if rol and rol.nombre == 'Personal':
-            return username  # Saltar validación
         if not username:
             raise forms.ValidationError("Este campo es obligatorio.")
         if ' ' in username:

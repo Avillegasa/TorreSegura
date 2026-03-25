@@ -2,7 +2,6 @@
 // Script para cargar viviendas dinámicamente cuando se selecciona un edificio
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Script ajax_viviendas.js cargado');
     
     // ✅ FUNCIÓN PRINCIPAL: Cargar viviendas por edificio
     function setupViviendaLoader() {
@@ -10,11 +9,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const viviendaSelect = document.getElementById('id_vivienda');
         
         if (edificioSelect && viviendaSelect) {
-            console.log('Elementos encontrados, configurando listeners');
             
             edificioSelect.addEventListener('change', function() {
                 const edificioId = this.value;
-                console.log('Edificio seleccionado:', edificioId);
                 
                 // Limpiar opciones de vivienda
                 viviendaSelect.innerHTML = '<option value="">---------</option>';
@@ -33,7 +30,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             return response.json();
                         })
                         .then(data => {
-                            console.log('Viviendas recibidas:', data);
                             
                             viviendaSelect.innerHTML = '<option value="">---------</option>';
                             
@@ -70,15 +66,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Útil cuando hay errores de validación y se regresa al formulario
             const initialEdificio = edificioSelect.value;
             if (initialEdificio) {
-                console.log('Edificio pre-seleccionado encontrado:', initialEdificio);
                 // Trigger change event to load viviendas
                 edificioSelect.dispatchEvent(new Event('change'));
             }
-        } else {
-            console.log('Elementos no encontrados:', {
-                edificio: !!edificioSelect,
-                vivienda: !!viviendaSelect
-            });
         }
     }
     
@@ -89,7 +79,6 @@ document.addEventListener('DOMContentLoaded', function() {
             // Hacer que el campo password no sea requerido en edición
             const usernameField = document.querySelector('input[name="username"]');
             if (usernameField && usernameField.value !== '') {
-                console.log('Modo edición detectado, haciendo contraseñas opcionales');
                 
                 const password1 = document.getElementById('id_password1');
                 const password2 = document.getElementById('id_password2');
@@ -212,7 +201,6 @@ document.addEventListener('DOMContentLoaded', function() {
     setupResidenteForm();
     setupFinancialFilters();
     
-    console.log('Todas las configuraciones de AJAX completadas');
 });
 
 // ✅ FUNCIÓN GLOBAL: Para uso en templates si es necesario

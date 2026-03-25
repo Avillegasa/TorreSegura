@@ -193,21 +193,20 @@ def edificios_list(request):
     Usado por múltiples módulos para selects dinámicos
     """
     try:
-        edificios = Edificio.objects.all().values(
-            'id', 'nombre', 'direccion', 'pisos'
-        ).order_by('nombre')
-        
-        # Agregar información adicional
+        edificios = Edificio.objects.prefetch_related('viviendas').order_by('nombre')
+
         edificios_list = []
         for edificio in edificios:
-            edificio_obj = Edificio.objects.get(pk=edificio['id'])
             edificios_list.append({
-                **edificio,
-                'total_viviendas': edificio_obj.get_total_viviendas(),
-                'viviendas_ocupadas': edificio_obj.get_viviendas_ocupadas(),
-                'porcentaje_ocupacion': edificio_obj.get_porcentaje_ocupacion()
+                'id': edificio.id,
+                'nombre': edificio.nombre,
+                'direccion': edificio.direccion,
+                'pisos': edificio.pisos,
+                'total_viviendas': edificio.get_total_viviendas(),
+                'viviendas_ocupadas': edificio.get_viviendas_ocupadas(),
+                'porcentaje_ocupacion': edificio.get_porcentaje_ocupacion(),
             })
-        
+
         return JsonResponse(edificios_list, safe=False)
         
     except Exception as e:

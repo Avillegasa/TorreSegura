@@ -5,7 +5,8 @@
 {% block header %}Dashboard{% endblock %}
 
 {% block content %}
-<!-- Selector de edificio -->
+<!-- Selector de edificio (solo Admin puede cambiar) -->
+{% if request.user.rol.nombre == "Administrador" %}
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form id="edificioFilterForm" method="get" class="d-flex align-items-center">
@@ -29,9 +30,14 @@
         </form>
     </div>
 </div>
+{% else %}
+<div class="alert alert-info mb-4">
+    <h5 class="mb-0"><i class="fas fa-building"></i> Edificio: <strong>{{ edificio_nombre }}</strong></h5>
+</div>
+{% endif %}
 
-<!-- Título del dashboard con edificio seleccionado -->
-{% if edificio_seleccionado %}
+<!-- Título del dashboard con edificio seleccionado (solo Admin) -->
+{% if edificio_seleccionado and request.user.rol.nombre == "Administrador" %}
 <div class="alert alert-info mb-4">
     <h5 class="mb-0"><i class="fas fa-info-circle"></i> Mostrando información de: <strong>{{ edificio_nombre }}</strong>
     </h5>
@@ -109,6 +115,134 @@
         </div>
     </div>
 </div>
+
+<!-- Resumen Financiero -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card border-start border-4 border-danger shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Cuotas Pendientes</div>
+                        <h3 class="mb-0">{{ cuotas_pendientes_count }}</h3>
+                    </div>
+                    <i class="fas fa-file-invoice-dollar fa-2x text-danger opacity-50"></i>
+                </div>
+                {% if cuotas_vencidas_count > 0 %}
+                <div class="small text-danger mt-2">
+                    <i class="fas fa-exclamation-triangle"></i> {{ cuotas_vencidas_count }} vencida{{ cuotas_vencidas_count|pluralize:"s" }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-start border-4 border-warning shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Pagos por Verificar</div>
+                        <h3 class="mb-0">{{ pagos_por_verificar }}</h3>
+                    </div>
+                    <i class="fas fa-clock fa-2x text-warning opacity-50"></i>
+                </div>
+                {% if pagos_por_verificar > 0 %}
+                <a href="{% url 'pago-list' %}?estado=PENDIENTE" class="small text-warning mt-2 d-block">
+                    <i class="fas fa-arrow-right"></i> Revisar pagos
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-start border-4 border-primary shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Total por Cobrar</div>
+                        <h3 class="mb-0">{{ total_por_cobrar|floatformat:2 }} <small class="fs-6">BOB</small></h3>
+                    </div>
+                    <i class="fas fa-money-bill-wave fa-2x text-primary opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-start border-4 border-success shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase fw-bold mb-2">Acciones Financieras</div>
+                <div class="d-grid gap-1">
+                    <a href="{% url 'cuota-list' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-list"></i> Ver Cuotas
+                    </a>
+                    <a href="{% url 'pago-list' %}" class="btn btn-sm btn-outline-success">
+                        <i class="fas fa-money-bill-wave"></i> Ver Pagos
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if ultimos_pagos_pendientes %}
+<!-- Pagos pendientes de verificacion -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow-sm border-start border-4 border-warning">
+            <div class="card-header d-flex justify-content-between align-items-center bg-warning bg-opacity-10">
+                <h5 class="mb-0"><i class="fas fa-clock text-warning"></i> Pagos Pendientes de Verificacion</h5>
+                <a href="{% url 'pago-list' %}?estado=PENDIENTE" class="btn btn-sm btn-outline-warning">
+                    Ver todos
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Residente</th>
+                                <th>Vivienda</th>
+                                <th>Monto</th>
+                                <th>Metodo</th>
+                                <th>Fecha</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pago in ultimos_pagos_pendientes %}
+                            <tr>
+                                <td>
+                                    {% if pago.residente and pago.residente.usuario %}
+                                        {{ pago.residente.usuario.get_full_name|default:pago.residente.usuario.username }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>{{ pago.vivienda }}</td>
+                                <td><strong>{{ pago.monto|floatformat:2 }} BOB</strong></td>
+                                <td>{{ pago.get_metodo_pago_display }}</td>
+                                <td>{{ pago.fecha_pago|date:"d/m/Y" }}</td>
+                                <td>
+                                    <a href="{% url 'pago-detail' pago.pk %}" class="btn btn-sm btn-outline-primary" title="Ver detalle">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="{% url 'pago-verificar' pago.pk %}" class="btn btn-sm btn-success" title="Verificar">
+                                        <i class="fas fa-check"></i>
+                                    </a>
+                                    <a href="{% url 'pago-rechazar' pago.pk %}" class="btn btn-sm btn-danger" title="Rechazar">
+                                        <i class="fas fa-times"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="row mb-4">
     <!-- Gráfica de ocupación de viviendas -->
@@ -313,15 +447,12 @@
                         </a>
                     </div>
                     <div class="col-md-2 col-sm-4 col-6 mb-3">
-                        
-                        {% if request.user.rol and request.user.rol.nombre == "Gerente" %}
-                        <a href="{% url 'residente-create' %}" class="text-decoration-none">
+                        <a href="{% url 'cuota-create' %}" class="text-decoration-none">
                             <div class="p-3 rounded bg-light">
-                                <i class="fas fa-user-friends fa-2x text-danger mb-2"></i>
-                                <div>Nuevo Residente</div>
+                                <i class="fas fa-file-invoice-dollar fa-2x text-danger mb-2"></i>
+                                <div>Nueva Cuota</div>
                             </div>
                         </a>
-                        {% endif %}
                     </div>
                 </div>
             </div>

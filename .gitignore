@@ -31,6 +31,7 @@ db.sqlite3.bak.*
 
 # Archivos generados / uploads (no versionar)
 media/
+
 mediafiles/
 staticfiles/
 
@@ -40,3 +41,5 @@ staticfiles/
 *.egg-info/
 .cache/
 
+node_modules
+node_modules

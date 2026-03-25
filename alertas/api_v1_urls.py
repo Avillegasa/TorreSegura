@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     AlertaViewSet,
     actualizar_estado_alerta,
+    alertas_nuevas,
     crear_alerta,
     mis_alertas,
 )
@@ -17,6 +18,7 @@ urlpatterns = [
     # Custom helpers
     path("crear/", crear_alerta, name="api_v1_alerta_crear"),
     path("mis/", mis_alertas, name="api_v1_alerta_mis"),
+    path("nuevas/", alertas_nuevas, name="api_v1_alerta_nuevas"),
     path("<int:pk>/estado/", actualizar_estado_alerta, name="api_v1_alerta_estado"),
 
     # CRUD estándar

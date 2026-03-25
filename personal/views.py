@@ -12,7 +12,7 @@ from uuid import uuid4
 from usuarios.models import Usuario
 from django.contrib.auth.mixins import UserPassesTestMixin
 from .forms import PersonalCompleteForm
-from usuarios.views import AccesoWebPermitidoMixin
+from usuarios.views import AccesoWebPermitidoMixin, AdministradorRequeridoMixin
 from .models import Puesto, Empleado, Asignacion, ComentarioAsignacion
 from .forms import PuestoForm, EmpleadoForm, AsignacionForm, ComentarioAsignacionForm, AsignacionFiltroForm
 from viviendas.models import Vivienda
@@ -23,7 +23,7 @@ class PuestoListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     template_name = 'personal/puesto_list.html'
     context_object_name = 'puestos'
 
-class PuestoCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
+class PuestoCreateView(LoginRequiredMixin, AdministradorRequeridoMixin, CreateView):
     model = Puesto
     form_class = PuestoForm
     template_name = 'personal/puesto_form.html'
@@ -33,7 +33,7 @@ class PuestoCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
         messages.success(self.request, 'Puesto creado exitosamente.')
         return super().form_valid(form)
 
-class PuestoUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
+class PuestoUpdateView(LoginRequiredMixin, AdministradorRequeridoMixin, UpdateView):
     model = Puesto
     form_class = PuestoForm
     template_name = 'personal/puesto_form.html'
@@ -43,7 +43,7 @@ class PuestoUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
         messages.success(self.request, 'Puesto actualizado exitosamente.')
         return super().form_valid(form)
 
-class PuestoDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
+class PuestoDeleteView(LoginRequiredMixin, AdministradorRequeridoMixin, DeleteView):
     model = Puesto
     template_name = 'personal/puesto_confirm_delete.html'
     success_url = reverse_lazy('puesto-list')
@@ -52,19 +52,24 @@ class PuestoDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
         try:
             self.object.delete()
             messages.success(self.request, 'Puesto eliminado exitosamente.')
-        except Exception as e:
-            messages.error(self.request, f'No se pudo eliminar el puesto: {str(e)}')
+        except Exception:
+            messages.error(self.request, 'No se pudo eliminar el puesto. Puede tener empleados asociados.')
             return redirect('puesto-list')
         return redirect(self.success_url)
 
 # Vistas para Empleados
-class EmpleadoListView(LoginRequiredMixin, ListView):
+class EmpleadoListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Empleado
     template_name = 'personal/empleado_list.html'
     context_object_name = 'empleados'
     
     def get_queryset(self):
         queryset = super().get_queryset().select_related('usuario', 'puesto')
+        user = self.request.user
+
+        # Gerente solo ve empleados de su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
         
         # Filtrar por puesto si se especifica
         puesto_id = self.request.GET.get('puesto')
@@ -135,18 +140,30 @@ class EmpleadoUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView
     form_class = EmpleadoForm
     template_name = 'personal/empleado_form.html'
     success_url = reverse_lazy('empleado-list')
-    
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+        return queryset
+
     def form_valid(self, form):
         messages.success(self.request, 'Empleado actualizado exitosamente.')
         return super().form_valid(form)
 
-class EmpleadoDetailView(LoginRequiredMixin, DetailView):
+class EmpleadoDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Empleado
     template_name = 'personal/empleado_detail.html'
     context_object_name = 'empleado'
     
     def get_queryset(self):
-        return super().get_queryset().select_related('usuario', 'puesto')
+        queryset = super().get_queryset().select_related('usuario', 'puesto')
+        user = self.request.user
+        # Gerente solo puede ver empleados de su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -170,10 +187,16 @@ def empleado_change_state(request, pk):
     """Vista para activar/desactivar un empleado"""
     empleado = get_object_or_404(Empleado, pk=pk)
     
-    # ✅ CORRECCIÓN: Verificar permisos de administrador
-    if not hasattr(request.user, 'rol') or request.user.rol.nombre != 'Administrador':
+    # ✅ CORRECCIÓN: Verificar permisos de administrador o gerente del edificio
+    if not hasattr(request.user, 'rol') or request.user.rol.nombre not in ['Administrador', 'Gerente']:
         messages.error(request, 'No tienes permisos para realizar esta acción.', extra_tags='danger')
         return redirect('empleado-list')
+    
+    # Gerente solo puede gestionar empleados de su edificio
+    if request.user.rol.nombre == 'Gerente' and hasattr(request.user, 'gerente'):
+        if empleado.edificio != request.user.gerente.edificio:
+            messages.error(request, 'Solo puedes gestionar empleados de tu edificio.', extra_tags='danger')
+            return redirect('empleado-list')
     
     if request.method == 'POST':
         # Cambiar el estado del empleado
@@ -194,7 +217,7 @@ def empleado_change_state(request, pk):
     return render(request, 'personal/empleado_change_state.html', {'empleado': empleado})
 
 # Vistas para Asignaciones
-class AsignacionListView(LoginRequiredMixin, ListView):
+class AsignacionListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = Asignacion
     template_name = 'personal/asignacion_list.html'
     context_object_name = 'asignaciones'
@@ -203,6 +226,11 @@ class AsignacionListView(LoginRequiredMixin, ListView):
         queryset = super().get_queryset().select_related(
             'empleado__usuario', 'empleado__puesto', 'edificio', 'vivienda', 'asignado_por'
         )
+        user = self.request.user
+
+        # Gerente solo ve asignaciones de su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
         
         # Crear formulario de filtro
         self.filtro_form = AsignacionFiltroForm(self.request.GET or None)
@@ -268,39 +296,53 @@ class AsignacionUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateVi
     form_class = AsignacionForm
     template_name = 'personal/asignacion_form.html'
     success_url = reverse_lazy('asignacion-list')
-    
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+        return queryset
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
-    
+
     def form_valid(self, form):
         messages.success(self.request, 'Asignación actualizada exitosamente.')
         return super().form_valid(form)
 
-class AsignacionDetailView(LoginRequiredMixin, DetailView):
+class AsignacionDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Asignacion
     template_name = 'personal/asignacion_detail.html'
     context_object_name = 'asignacion'
-    
+
     def get_queryset(self):
-        return super().get_queryset().select_related(
+        queryset = super().get_queryset().select_related(
             'empleado__usuario', 'empleado__puesto', 'edificio', 'vivienda', 'asignado_por'
         ).prefetch_related('comentarios__usuario')
-    
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(edificio=user.gerente.edificio)
+        return queryset
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Añadir el formulario de comentarios
         context['comentario_form'] = ComentarioAsignacionForm()
-        # Obtener los comentarios para esta asignación
         context['comentarios'] = self.object.comentarios.select_related('usuario').order_by('-fecha')
         return context
-    
+
     def post(self, request, *args, **kwargs):
         """Manejar el envío del formulario de comentarios"""
         self.object = self.get_object()
+        # Solo Admin/Gerente pueden comentar
+        rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+        if rol_nombre not in ['Administrador', 'Gerente']:
+            messages.error(request, 'No tienes permisos para agregar comentarios.', extra_tags='danger')
+            return redirect('asignacion-detail', pk=self.object.pk)
+
         form = ComentarioAsignacionForm(request.POST)
-        
         if form.is_valid():
             comentario = form.save(commit=False)
             comentario.asignacion = self.object
@@ -309,7 +351,7 @@ class AsignacionDetailView(LoginRequiredMixin, DetailView):
             messages.success(request, 'Comentario añadido exitosamente.')
         else:
             messages.error(request, 'Error al agregar el comentario.')
-        
+
         return redirect('asignacion-detail', pk=self.object.pk)
 
 @login_required
@@ -318,10 +360,16 @@ def cambiar_estado_asignacion(request, pk):
     asignacion = get_object_or_404(Asignacion, pk=pk)
     
     # ✅ CORRECCIÓN: Verificar permisos
-    if not hasattr(request.user, 'rol') or request.user.rol.nombre != 'Administrador':
+    if not hasattr(request.user, 'rol') or request.user.rol.nombre not in ['Administrador', 'Gerente']:
         # Permitir que el empleado asignado también pueda cambiar algunos estados
         if not (hasattr(request.user, 'empleado') and request.user.empleado == asignacion.empleado):
             messages.error(request, 'No tienes permisos para cambiar el estado de esta asignación.', extra_tags='danger')
+            return redirect('asignacion-detail', pk=asignacion.pk)
+    
+    # Gerente solo puede gestionar asignaciones de su edificio
+    if hasattr(request.user, 'rol') and request.user.rol.nombre == 'Gerente' and hasattr(request.user, 'gerente'):
+        if asignacion.edificio != request.user.gerente.edificio:
+            messages.error(request, 'Solo puedes gestionar asignaciones de tu edificio.', extra_tags='danger')
             return redirect('asignacion-detail', pk=asignacion.pk)
     
     if request.method == 'POST':
@@ -370,8 +418,8 @@ def viviendas_por_edificio_api(request):
         return JsonResponse(list(viviendas), safe=False)
     except (ValueError, TypeError):
         return JsonResponse({'error': 'ID de edificio inválido'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception:
+        return JsonResponse({'error': 'Error al obtener viviendas'}, status=500)
     
     
 class GerenteAccesoMixin(UserPassesTestMixin):
@@ -415,17 +463,78 @@ class PersonalCreateView(LoginRequiredMixin, GerenteAccesoMixin, CreateView):
             # Validar que el formulario sea válido antes de proceder
             if not form.is_valid():
                 return self.form_invalid(form)
-            
+
             # Usar el método del formulario para crear usuario y empleado
-            empleado = form.crear_usuario_y_empleado(creado_por=self.request.user)
-            
-            # Mensaje de éxito personalizado
-            messages.success(
-                self.request, 
-                f'Personal {empleado.usuario.first_name} {empleado.usuario.last_name} '
-                f'creado exitosamente en el puesto de {empleado.puesto.nombre}.'
-            )
-            
+            empleado, credenciales = form.crear_usuario_y_empleado(creado_por=self.request.user)
+
+            if credenciales:
+                # Vigilante creado: verificar email en allauth para evitar bloqueo en login
+                nombre = f'{empleado.usuario.first_name} {empleado.usuario.last_name}'
+                email = empleado.usuario.email
+                email_enviado = False
+
+                if email and '@noemail.com' not in email:
+                    from allauth.account.models import EmailAddress
+                    EmailAddress.objects.get_or_create(
+                        user=empleado.usuario,
+                        email=email,
+                        defaults={'primary': True, 'verified': True}
+                    )
+
+                    email_enviado = self._enviar_email_credenciales_vigilante(
+                        empleado.usuario, credenciales['password']
+                    )
+
+                if email_enviado:
+                    messages.success(
+                        self.request,
+                        f'Vigilante {nombre} creado exitosamente. '
+                        f'Se enviaron las credenciales a {email}.'
+                    )
+                else:
+                    messages.success(
+                        self.request,
+                        f'Vigilante {nombre} creado exitosamente.'
+                    )
+                    if not email or '@noemail.com' in email:
+                        messages.warning(
+                            self.request,
+                            'No se enviaron credenciales por email porque no tiene correo registrado.'
+                        )
+
+                # Guardar credenciales en sesion para mostrarlas una sola vez
+                self.request.session['credenciales_vigilante'] = {
+                    'nombre': nombre,
+                    'username': credenciales['username'],
+                    'password': credenciales['password'],
+                    'email_enviado': email_enviado,
+                }
+                return redirect('personal-credenciales')
+            else:
+                # Personal normal: enviar QR por email
+                from personal.qr_utils import enviar_qr_por_email
+                email_enviado = enviar_qr_por_email(empleado)
+
+                nombre = f'{empleado.usuario.first_name} {empleado.usuario.last_name}'
+                if email_enviado:
+                    messages.success(
+                        self.request,
+                        f'Personal {nombre} creado exitosamente en el puesto de '
+                        f'{empleado.puesto.nombre}. Se envio el QR de identificacion a '
+                        f'{empleado.usuario.email}.'
+                    )
+                else:
+                    messages.success(
+                        self.request,
+                        f'Personal {nombre} creado exitosamente en el puesto de '
+                        f'{empleado.puesto.nombre}.'
+                    )
+                    if not empleado.usuario.email or '@noemail.com' in empleado.usuario.email:
+                        messages.warning(
+                            self.request,
+                            'No se envio QR porque el empleado no tiene email registrado.'
+                        )
+
             # Logging para auditoría
             import logging
             logger = logging.getLogger(__name__)
@@ -434,9 +543,9 @@ class PersonalCreateView(LoginRequiredMixin, GerenteAccesoMixin, CreateView):
                 f"{empleado.usuario.first_name} {empleado.usuario.last_name} "
                 f"({empleado.puesto.nombre})"
             )
-            
+
             return redirect(self.success_url)
-            
+
         except ValidationError as e:
             messages.error(self.request, f"Error de validación: {str(e)}")
             form.add_error(None, str(e))
@@ -445,9 +554,9 @@ class PersonalCreateView(LoginRequiredMixin, GerenteAccesoMixin, CreateView):
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Error al crear personal: {str(e)}")
-            
+
             messages.error(
-                self.request, 
+                self.request,
                 f"Error al crear el personal: {str(e)}"
             )
             return self.form_invalid(form)
@@ -465,6 +574,66 @@ class PersonalCreateView(LoginRequiredMixin, GerenteAccesoMixin, CreateView):
         
         return super().form_invalid(form)
 
+    def _enviar_email_credenciales_vigilante(self, usuario, password_temporal):
+        """Envia email con credenciales y enlace de cambio de contrasena al vigilante."""
+        from django.core.mail import send_mail
+        from django.conf import settings
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+
+        nombre = f'{usuario.first_name} {usuario.last_name}'
+        edificio = ''
+        if hasattr(usuario, 'vigilante') and usuario.vigilante and usuario.vigilante.edificio:
+            edificio = usuario.vigilante.edificio.nombre
+
+        # Generar enlace de cambio de contrasena
+        uid = urlsafe_base64_encode(force_bytes(usuario.pk))
+        token = default_token_generator.make_token(usuario)
+        reset_url = self.request.build_absolute_uri(
+            f'/password-reset/{uid}/{token}/'
+        )
+
+        asunto = 'Torre Segura - Credenciales de acceso'
+        mensaje = (
+            f'Hola {nombre},\n\n'
+            f'Se ha creado tu cuenta de vigilante en Torre Segura.\n\n'
+            f'{f"Edificio asignado: {edificio}" + chr(10) if edificio else ""}'
+            f'Tus credenciales para la aplicacion movil son:\n'
+            f'  Usuario: {usuario.username}\n'
+            f'  Contrasena: {password_temporal}\n\n'
+            f'PASOS PARA ACTIVAR TU CUENTA:\n'
+            f'1. Descarga la aplicacion movil Torre Segura\n'
+            f'2. Inicia sesion con las credenciales de arriba\n'
+            f'3. La app te pedira que cambies tu contrasena\n'
+            f'4. Haz clic en el siguiente enlace para crear tu contrasena definitiva:\n\n'
+            f'   {reset_url}\n\n'
+            f'5. Una vez cambiada, vuelve a la app e inicia sesion con tu nueva contrasena\n\n'
+            f'IMPORTANTE: Estas credenciales temporales son validas por 24 horas.\n\n'
+            f'Saludos,\n'
+            f'Equipo Torre Segura'
+        )
+
+        try:
+            send_mail(
+                asunto,
+                mensaje,
+                settings.DEFAULT_FROM_EMAIL,
+                [usuario.email],
+                fail_silently=False,
+            )
+            return True
+        except Exception:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error enviando credenciales a {usuario.email}")
+            messages.warning(
+                self.request,
+                f'No se pudo enviar el email a {usuario.email}. '
+                f'Comparta las credenciales manualmente.'
+            )
+            return False
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Crear Nuevo Personal'
@@ -476,5 +645,21 @@ class PersonalCreateView(LoginRequiredMixin, GerenteAccesoMixin, CreateView):
             context['es_gerente'] = True
         else:
             context['es_gerente'] = False
-            
+
         return context
+
+
+@login_required
+def credenciales_vigilante_view(request):
+    """
+    Muestra las credenciales del vigilante recien creado una sola vez.
+    Las credenciales se eliminan de la sesion despues de mostrarlas.
+    """
+    credenciales = request.session.pop('credenciales_vigilante', None)
+    if not credenciales:
+        messages.warning(request, "No hay credenciales para mostrar.")
+        return redirect('empleado-list')
+
+    return render(request, 'personal/credenciales_vigilante.html', {
+        'credenciales': credenciales,
+    })

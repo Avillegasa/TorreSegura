@@ -356,15 +356,14 @@ def generar_puestos(num_puestos=NUM_PUESTOS):
     print(f"\nGenerando {num_puestos} puestos de trabajo...")
     
     puestos_data = [
-        {'nombre': 'Conserje', 'descripcion': 'Limpieza y mantenimiento básico', 'requiere_especializacion': False},
-        {'nombre': 'Jardinero', 'descripcion': 'Mantenimiento de áreas verdes', 'requiere_especializacion': False},
+        {'nombre': 'Jardinero', 'descripcion': 'Mantenimiento de areas verdes', 'requiere_especializacion': False},
         {'nombre': 'Seguridad', 'descripcion': 'Control de accesos y vigilancia', 'requiere_especializacion': True},
-        {'nombre': 'Recepcionista', 'descripcion': 'Atención en lobby y registro de visitas', 'requiere_especializacion': False},
-        {'nombre': 'Técnico de Mantenimiento', 'descripcion': 'Reparaciones y mantenimiento especializado', 'requiere_especializacion': True},
-        {'nombre': 'Auxiliar Administrativo', 'descripcion': 'Apoyo en tareas administrativas', 'requiere_especializacion': False},
-        {'nombre': 'Plomero', 'descripcion': 'Mantenimiento y reparación de sistemas de agua', 'requiere_especializacion': True},
-        {'nombre': 'Electricista', 'descripcion': 'Mantenimiento eléctrico', 'requiere_especializacion': True},
-        {'nombre': 'Albañil', 'descripcion': 'Reparaciones y obras menores', 'requiere_especializacion': True}
+        {'nombre': 'Recepcionista', 'descripcion': 'Atencion en lobby y registro de visitas', 'requiere_especializacion': False},
+        {'nombre': 'Tecnico De Mantenimiento', 'descripcion': 'Reparaciones y mantenimiento especializado', 'requiere_especializacion': True},
+        {'nombre': 'Plomero', 'descripcion': 'Mantenimiento y reparacion de sistemas de agua', 'requiere_especializacion': True},
+        {'nombre': 'Electricista', 'descripcion': 'Mantenimiento electrico', 'requiere_especializacion': True},
+        {'nombre': 'Pintor', 'descripcion': 'Realiza trabajos de pintura', 'requiere_especializacion': False},
+        {'nombre': 'Otro', 'descripcion': 'Puesto personalizado', 'requiere_especializacion': False},
     ]
     
     puestos = []

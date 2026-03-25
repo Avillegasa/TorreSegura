@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -11,7 +13,7 @@ from .models import Visita
 from .serializers import VisitanteSerializer
 
 
-class VisitanteViewSet(viewsets.ReadOnlyModelViewSet):
+class VisitanteViewSet(viewsets.ModelViewSet):
     """API móvil para gestionar visitantes (visitas).
 
     Model usado: accesos.Visita
@@ -23,6 +25,8 @@ class VisitanteViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = VisitanteSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None  # La app movil no maneja paginacion
+    http_method_names = ["get", "delete", "patch", "head", "options"]
 
     def _rol(self) -> str | None:
         return getattr(getattr(self.request.user, "rol", None), "nombre", None)
@@ -66,8 +70,19 @@ class VisitanteViewSet(viewsets.ReadOnlyModelViewSet):
             elif status_filter == "departed":
                 qs = qs.filter(fecha_hora_salida__isnull=False)
             else:
-                # Forzamos error JSON consistente
                 raise ValueError("status inválido. Use pending|scanned|departed")
+
+        # Filtro por rango de fechas (máximo 1 mes hacia atrás)
+        un_mes_atras = timezone.now() - timedelta(days=30)
+        qs = qs.filter(fecha_hora_entrada__gte=un_mes_atras)
+
+        # Filtro opcional: search (nombre o documento del visitante)
+        search = self.request.query_params.get("search")
+        if search:
+            qs = qs.filter(
+                Q(nombre_visitante__icontains=search)
+                | Q(documento_visitante__icontains=search)
+            )
 
         return qs
 
@@ -80,6 +95,36 @@ class VisitanteViewSet(viewsets.ReadOnlyModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         resp = super().retrieve(request, *args, **kwargs)
         return resp
+
+    def destroy(self, request, *args, **kwargs):
+        """Solo el residente puede eliminar sus invitaciones pendientes (QR no usado)."""
+        visita = self.get_object()
+
+        if not self._es_residente() and not self._es_admin():
+            return Response(
+                {"mensaje": "No tienes permisos para eliminar esta invitacion."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if self._es_residente():
+            vivienda_id = getattr(request.user.residente, "vivienda_id", None)
+            if visita.vivienda_destino_id != vivienda_id:
+                return Response(
+                    {"mensaje": "No puedes eliminar invitaciones de otra vivienda."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        if visita.qr_usado:
+            return Response(
+                {"mensaje": "No se puede eliminar una invitacion ya escaneada."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        visita.delete()
+        return Response(
+            {"mensaje": "Invitacion eliminada correctamente."},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["patch"], url_path="mark-exit")
     def mark_exit(self, request, pk=None):

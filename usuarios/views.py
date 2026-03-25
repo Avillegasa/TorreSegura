@@ -100,7 +100,6 @@ def crear_cliente_potencial(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ====== OPCIÓN 2: Usando Django Views tradicionales ======
-@csrf_exempt  # Desactiva CSRF para esta vista (necesario para requests externos)
 @require_http_methods(["POST"])
 def crear_cliente_potencial_simple(request):
     """
@@ -140,8 +139,7 @@ def crear_cliente_potencial_simple(request):
     except Exception as e:
         return JsonResponse({
             'success': False,
-            'error': 'Error interno del servidor',
-            'details': str(e)
+            'error': 'Error interno del servidor'
         }, status=500)
 
 # ====== Vista para listar clientes potenciales (ya existente, mejorada) ======
@@ -213,6 +211,7 @@ def tiene_acceso_web(user):
         user.rol.nombre in ['Administrador', 'Gerente']
     )
 
+@login_required
 def cargar_viviendas(request):
     edificio_id = request.GET.get('edificio_id')
     viviendas = Vivienda.objects.filter(edificio_id=edificio_id, estado='DESOCUPADO', activo=True).order_by('numero')
@@ -290,18 +289,29 @@ class UsuarioListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     context_object_name = 'usuarios'
 
     def get_queryset(self):
-        queryset = super().get_queryset().filter(rol__isnull=False)
+        queryset = super().get_queryset().select_related('rol').filter(rol__isnull=False)
+        user = self.request.user
         query = self.request.GET.get("q", "").strip()
         rol_id = self.request.GET.get("rol", "").strip()
         edificio_id = self.request.GET.get("edificio", "").strip()
-        
-        if edificio_id and edificio_id.isdigit():
+
+        # Gerente solo ve usuarios de su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            edificio = user.gerente.edificio
+            queryset = queryset.filter(
+                Q(gerente__edificio=edificio) |
+                Q(vigilante__edificio=edificio) |
+                Q(residente__vivienda__edificio=edificio) |
+                Q(empleado__edificio=edificio)
+            ).distinct()
+        elif edificio_id and edificio_id.isdigit():
             queryset = queryset.filter(
                 Q(gerente__edificio_id=edificio_id) |
                 Q(vigilante__edificio_id=edificio_id) |
                 Q(residente__vivienda__edificio_id=edificio_id) |
                 Q(empleado__edificio_id=edificio_id)
             )
+
         # Filtro de búsqueda por texto
         if query:
             queryset = queryset.filter(
@@ -333,7 +343,13 @@ class UsuarioListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
         edificio_str = self.request.GET.get("edificio", "").strip()
         context["edificio"] = edificio_str
         context["edificio_id"] = int(edificio_str) if edificio_str.isdigit() else None
-        context["edificios"] = Edificio.objects.all()
+
+        # Gerente solo ve su edificio en los filtros
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            context["edificios"] = Edificio.objects.filter(pk=user.gerente.edificio.pk)
+        else:
+            context["edificios"] = Edificio.objects.all()
         return context
 
 
@@ -350,15 +366,21 @@ class UsuarioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView)
             usuario = form.save(commit=False)
             usuario.is_active = True
             
-            # Asignar username si esta vacío
+            # Generar username a partir del nombre si está vacío
             if not usuario.username:
-                usuario.username = f"personal_{uuid4().hex[:6]}"
+                base = f"{usuario.first_name.lower().replace(' ', '')}_{usuario.last_name.lower().replace(' ', '')}"
+                usuario.username = base
+                # Asegurar unicidad
+                counter = 1
+                while Usuario.objects.filter(username=usuario.username).exists():
+                    usuario.username = f"{base}_{counter}"
+                    counter += 1
 
-            if not usuario.email:
-                usuario.email = f"{uuid4().hex[:8]}@noemail.com"
-            usuario.set_unusable_password()
+            # Guardar la contraseña en texto plano para mostrarla una sola vez
+            password_plano = form.cleaned_data.get('password1')
             usuario.save()
             
+            # Crear el empleado
             Empleado.objects.create(
                 usuario=usuario,
                 puesto=form.cleaned_data.get("puesto"),
@@ -372,9 +394,27 @@ class UsuarioCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView)
                 creado_por=self.request.user
             )
 
+            # Marcar email como verificado para acceso móvil sin verificación
+            try:
+                from allauth.account.models import EmailAddress
+                EmailAddress.objects.get_or_create(
+                    user=usuario,
+                    email=usuario.email,
+                    defaults={'primary': True, 'verified': True}
+                )
+            except Exception:
+                pass
+
             self.object = usuario
-            messages.success(self.request, "Empleado registrado correctamente.")
-            return redirect(self.success_url)
+            # Guardar credenciales en sesión para mostrarlas una sola vez
+            self.request.session['credenciales_creadas'] = {
+                'nombre_completo': usuario.get_full_name(),
+                'username': usuario.username,
+                'password': password_plano,
+                'rol': rol.nombre,
+                'puesto': str(form.cleaned_data.get('puesto', '')),
+            }
+            return redirect('usuario-credenciales')
 
         
         
@@ -497,6 +537,16 @@ class VerificarEmailView(View):
             messages.error(request, "El enlace de verificación no es válido o ha expirado.")
         return redirect('login')
 
+
+@login_required
+def usuario_credenciales(request):
+    """Muestra las credenciales generadas una sola vez después de crear un usuario."""
+    credenciales = request.session.pop('credenciales_creadas', None)
+    if not credenciales:
+        return redirect('usuario-list')
+    return render(request, 'usuarios/usuario_credenciales.html', {'credenciales': credenciales})
+
+
 class UsuarioUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Usuario
     form_class = UsuarioEditForm
@@ -526,15 +576,27 @@ class UsuarioChangeStateView(LoginRequiredMixin, AccesoWebPermitidoMixin, View):
             messages.add_message(request, messages.ERROR, f"No puedes desactivar a un usuario con rol '{usuario.rol.nombre}'.", extra_tags='danger')
             return HttpResponseRedirect(reverse_lazy('usuario-list'))
 
-        # ✅ Si es residente y se va a desactivar, liberar la vivienda
-        if not usuario.is_active and usuario.es_residente and hasattr(usuario, 'residente'):
-            vivienda = usuario.residente.vivienda
-            vivienda.estado = 'DESOCUPADO'
-            vivienda.save()
+        # Gerente solo puede cambiar estado de usuarios de su edificio
+        if request.user.rol and request.user.rol.nombre == 'Gerente' and hasattr(request.user, 'gerente'):
+            edificio = request.user.gerente.edificio
+            es_de_mi_edificio = (
+                (hasattr(usuario, 'residente') and usuario.residente.vivienda.edificio == edificio) or
+                (hasattr(usuario, 'vigilante') and usuario.vigilante.edificio == edificio) or
+                (hasattr(usuario, 'empleado') and usuario.empleado.edificio == edificio)
+            )
+            if not es_de_mi_edificio:
+                messages.error(request, 'Solo puedes gestionar usuarios de tu edificio.', extra_tags='danger')
+                return HttpResponseRedirect(reverse_lazy('usuario-list'))
 
         # Alternar estado activo
         usuario.is_active = not usuario.is_active
         usuario.save()
+
+        # ✅ Si es residente y se desactiva, liberar la vivienda
+        if not usuario.is_active and usuario.es_residente and hasattr(usuario, 'residente'):
+            vivienda = usuario.residente.vivienda
+            vivienda.estado = 'DESOCUPADO'
+            vivienda.save()
 
         estado = "activado" if usuario.is_active else "desactivado"
         messages.success(request, f'El usuario {usuario.username} ha sido {estado} correctamente.')
@@ -547,30 +609,57 @@ class UsuarioChangeStateView(LoginRequiredMixin, AccesoWebPermitidoMixin, View):
         else:
             return HttpResponseRedirect(reverse_lazy('dashboard'))
 
-class UsuarioDetailView(LoginRequiredMixin, DetailView):
+class UsuarioDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Usuario
     template_name = 'usuarios/usuario_detail.html'
     context_object_name = 'usuario'
 
-# Vistas de Roles
-class RolListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        # Gerente solo puede ver detalles de usuarios de su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            edificio = user.gerente.edificio
+            queryset = queryset.filter(
+                Q(gerente__edificio=edificio) |
+                Q(vigilante__edificio=edificio) |
+                Q(residente__vivienda__edificio=edificio) |
+                Q(empleado__edificio=edificio)
+            ).distinct()
+        return queryset
+
+# Vistas de Roles - Solo Administrador
+class AdministradorRequeridoMixin(UserPassesTestMixin):
+    def test_func(self):
+        return (
+            self.request.user.is_authenticated and
+            hasattr(self.request.user, 'rol') and
+            self.request.user.rol is not None and
+            self.request.user.rol.nombre == 'Administrador'
+        )
+
+    def handle_no_permission(self):
+        messages.error(self.request, "Solo los administradores pueden gestionar roles.", extra_tags='danger')
+        return redirect('dashboard')
+
+class RolListView(LoginRequiredMixin, AdministradorRequeridoMixin, ListView):
     model = Rol
     template_name = 'usuarios/rol_list.html'
     context_object_name = 'roles'
 
-class RolCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
+class RolCreateView(LoginRequiredMixin, AdministradorRequeridoMixin, CreateView):
     model = Rol
     form_class = RolForm
     template_name = 'usuarios/rol_form.html'
     success_url = reverse_lazy('rol-list')
 
-class RolUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
+class RolUpdateView(LoginRequiredMixin, AdministradorRequeridoMixin, UpdateView):
     model = Rol
     form_class = RolForm
     template_name = 'usuarios/rol_form.html'
     success_url = reverse_lazy('rol-list')
 
-class RolDeleteView(LoginRequiredMixin, AccesoWebPermitidoMixin, DeleteView):
+class RolDeleteView(LoginRequiredMixin, AdministradorRequeridoMixin, DeleteView):
     model = Rol
     template_name = 'usuarios/rol_confirm_delete.html'
     success_url = reverse_lazy('rol-list')

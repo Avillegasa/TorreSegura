@@ -17,6 +17,12 @@ urlpatterns = [
     # Visitas/Accesos (solo los endpoints DRF/JWT)
     path("accesos/", include("accesos.api_v1_urls")),
 
+    # Areas comunes y reservas
+    path("areas-comunes/", include("areas_comunes.api_v1_urls")),
+
+    # Financiero (cuotas y pagos para app movil)
+    path("financiero/", include("financiero.api_v1_urls")),
+
     # Visitantes (gestión móvil)
     path("", include(router.urls)),
 ]

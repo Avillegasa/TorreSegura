@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ area.nombre }} | Torre Segura{% endblock %}
+{% block header %}{{ area.nombre }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-door-open me-2"></i>Informacion del Area</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless">
+                    <tr><th>Nombre:</th><td>{{ area.nombre }}</td></tr>
+                    <tr><th>Edificio:</th><td>{{ area.edificio.nombre }}</td></tr>
+                    <tr><th>Descripcion:</th><td>{{ area.descripcion|default:"—" }}</td></tr>
+                    <tr><th>Capacidad:</th><td>{{ area.capacidad_maxima }} personas</td></tr>
+                    <tr><th>Horario:</th><td>{{ area.horario_inicio|time:"H:i" }} - {{ area.horario_fin|time:"H:i" }}</td></tr>
+                    <tr><th>Estado:</th><td>
+                        {% if area.activo %}
+                            <span class="badge bg-success">Activa</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Inactiva</span>
+                        {% endif %}
+                    </td></tr>
+                </table>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'area-comun-update' area.id %}" class="btn btn-warning btn-sm">
+                        <i class="fas fa-edit"></i> Editar
+                    </a>
+                    <a href="{% url 'area-comun-list' %}" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-arrow-left"></i> Volver
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Ultimas Reservas</h5>
+            </div>
+            <div class="card-body">
+                {% if reservas %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Horario</th>
+                                <th>Residente</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for reserva in reservas %}
+                            <tr>
+                                <td>{{ reserva.fecha|date:"d/m/Y" }}</td>
+                                <td>{{ reserva.hora_inicio|time:"H:i" }} - {{ reserva.hora_fin|time:"H:i" }}</td>
+                                <td>{{ reserva.residente.usuario.get_full_name|default:reserva.residente.usuario.username }}</td>
+                                <td>
+                                    {% if reserva.estado == 'confirmada' %}
+                                        <span class="badge bg-success">Confirmada</span>
+                                    {% elif reserva.estado == 'pendiente' %}
+                                        <span class="badge bg-warning">Pendiente</span>
+                                    {% elif reserva.estado == 'cancelada' %}
+                                        <span class="badge bg-danger">Cancelada</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ reserva.get_estado_display }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted text-center">No hay reservas registradas.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -18,7 +18,25 @@ import json
 @login_required
 def historial_visitas(request):
     """API endpoint para obtener el historial de visitas completadas (con salida registrada)"""
-    visitas = Visita.objects.filter(fecha_hora_salida__isnull=False).order_by('-fecha_hora_salida')[:100]  # Limitar a las 100 más recientes
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    
+    if rol_nombre not in ['Administrador', 'Gerente', 'Vigilante']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    visitas = Visita.objects.filter(
+        fecha_hora_salida__isnull=False
+    ).select_related(
+        'vivienda_destino', 'vivienda_destino__edificio',
+        'residente_autoriza', 'residente_autoriza__usuario',
+        'registrado_por',
+    ).order_by('-fecha_hora_salida')
+
+    # Gerente solo ve visitas de su edificio
+    if rol_nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+        visitas = visitas.filter(vivienda_destino__edificio=user.gerente.edificio)
+
+    visitas = visitas[:100]
     
     data = []
     for visita in visitas:
@@ -39,25 +57,37 @@ def historial_visitas(request):
 @login_required
 def residentes_por_vivienda(request, vivienda_id):
     """API endpoint para obtener los residentes de una vivienda específica (solo activos)"""
+    user = request.user
+    rol_nombre = getattr(getattr(user, 'rol', None), 'nombre', None)
+    
+    if rol_nombre not in ['Administrador', 'Gerente', 'Vigilante']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
     try:
         vivienda = Vivienda.objects.get(pk=vivienda_id)
-        residentes = vivienda.residentes.filter(activo=True)
         
+        # Gerente solo puede ver residentes de su edificio
+        if rol_nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            if vivienda.edificio != user.gerente.edificio:
+                return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        residentes = vivienda.residentes.filter(activo=True).select_related('usuario')
+
         data = []
         for residente in residentes:
             data.append({
                 'id': residente.id,
                 'nombre': f"{residente.usuario.first_name} {residente.usuario.last_name}",
-                'tipo': residente.tipo_residente.nombre,
-                'es_propietario': residente.tipo_residente.es_propietario,
+                'tipo': residente.tipo_residente,
+                'es_propietario': residente.es_propietario,
                 'activo': residente.activo
             })
         
         return JsonResponse(data, safe=False)
     except Vivienda.DoesNotExist:
         return JsonResponse({'error': 'Vivienda no encontrada'}, status=404)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception:
+        return JsonResponse({'error': 'Error interno'}, status=500)
 
 @require_GET
 @login_required
@@ -165,6 +195,10 @@ def crear_visita(request):
 
         vivienda = Vivienda.objects.get(pk=vivienda_id)
         residente = Residente.objects.get(usuario=request.user)
+        
+        # Validar que el residente solo cree visitas para su propia vivienda
+        if vivienda.id != residente.vivienda_id:
+            return Response({'error': 'Solo puede registrar visitas para su propia vivienda'}, status=status.HTTP_403_FORBIDDEN)
 
         visita = Visita.objects.create(
             nombre_visitante=nombre,

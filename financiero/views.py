@@ -86,9 +86,16 @@ class ConceptoCuotaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, Detai
         context = super().get_context_data(**kwargs)
         # Obtener cuotas asociadas a este concepto
         concepto = self.object
-        context['cuotas'] = Cuota.objects.filter(concepto=concepto).order_by('-fecha_emision')[:10]
-        context['total_cuotas'] = Cuota.objects.filter(concepto=concepto).count()
-        context['cuotas_pendientes'] = Cuota.objects.filter(concepto=concepto, pagada=False).count()
+        cuotas_qs = Cuota.objects.filter(concepto=concepto)
+
+        # Gerente: filtrar por edificio
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            cuotas_qs = cuotas_qs.filter(vivienda__edificio=user.gerente.edificio)
+
+        context['cuotas'] = cuotas_qs.order_by('-fecha_emision')[:10]
+        context['total_cuotas'] = cuotas_qs.count()
+        context['cuotas_pendientes'] = cuotas_qs.filter(pagada=False).count()
         
         # Calcular cuotas pagadas
         cuotas_pagadas = context['total_cuotas'] - context['cuotas_pendientes']
@@ -133,6 +140,11 @@ class CuotaListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+
+        # Gerente solo ve cuotas de su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
         
         # Filtrar por concepto
         concepto_id = self.request.GET.get('concepto')
@@ -181,6 +193,9 @@ class CuotaListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
         
         # Ordenar
         orden = self.request.GET.get('orden', '-fecha_emision')
+        campos_validos = ['fecha_emision', '-fecha_emision', 'fecha_vencimiento', '-fecha_vencimiento', 'monto', '-monto']
+        if orden not in campos_validos:
+            orden = '-fecha_emision'
         queryset = queryset.order_by(orden)
         
         return queryset
@@ -189,8 +204,15 @@ class CuotaListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
         context = super().get_context_data(**kwargs)
         # Agregar filtros al contexto
         context['conceptos'] = ConceptoCuota.objects.filter(activo=True)
-        context['edificios'] = Edificio.objects.all()
-        context['viviendas'] = Vivienda.objects.filter(activo=True)
+        
+        # Filtrar edificios/viviendas según el rol
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            context['edificios'] = Edificio.objects.filter(pk=user.gerente.edificio.pk)
+            context['viviendas'] = Vivienda.objects.filter(edificio=user.gerente.edificio, activo=True)
+        else:
+            context['edificios'] = Edificio.objects.all()
+            context['viviendas'] = Vivienda.objects.filter(activo=True)
         
         # Valores actuales de filtros
         context['concepto_id'] = self.request.GET.get('concepto', '')
@@ -222,7 +244,16 @@ class CuotaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
     form_class = CuotaForm
     template_name = 'financiero/cuota_form.html'
     success_url = reverse_lazy('cuota-list')
-    
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            form.fields['vivienda'].queryset = Vivienda.objects.filter(
+                edificio=user.gerente.edificio, activo=True
+            ).select_related('edificio')
+        return form
+
     def form_valid(self, form):
         messages.success(self.request, 'Cuota creada exitosamente.')
         return super().form_valid(form)
@@ -231,6 +262,13 @@ class CuotaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Cuota
     template_name = 'financiero/cuota_detail.html'
     context_object_name = 'cuota'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -245,6 +283,13 @@ class CuotaUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     template_name = 'financiero/cuota_form.html'
     success_url = reverse_lazy('cuota-list')
     
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
+    
     def form_valid(self, form):
         messages.success(self.request, 'Cuota actualizada exitosamente.')
         return super().form_valid(form)
@@ -252,7 +297,7 @@ class CuotaUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
 @login_required
 def generar_cuotas(request):
     """Vista para generar cuotas masivamente"""
-    if not request.user.rol or request.user.rol.nombre != 'Administrador':
+    if not request.user.rol or request.user.rol.nombre not in ['Administrador', 'Gerente']:
         raise PermissionDenied
     
     if request.method == 'POST':
@@ -268,11 +313,22 @@ def generar_cuotas(request):
             
             # Determinar las viviendas a las que aplicar
             if aplicar_a_todas:
-                viviendas = Vivienda.objects.filter(activo=True)
+                if request.user.rol.nombre == 'Gerente' and hasattr(request.user, 'gerente'):
+                    viviendas = Vivienda.objects.filter(edificio=request.user.gerente.edificio, activo=True)
+                else:
+                    viviendas = Vivienda.objects.filter(activo=True)
             elif edificio:
+                # Gerente solo puede generar para su edificio
+                if request.user.rol.nombre == 'Gerente' and hasattr(request.user, 'gerente'):
+                    if edificio != request.user.gerente.edificio:
+                        messages.error(request, 'Solo puedes generar cuotas para tu edificio.')
+                        return redirect('cuota-list')
                 viviendas = Vivienda.objects.filter(edificio=edificio, activo=True)
             else:
                 viviendas = viviendas_seleccionadas
+                # Gerente: filtrar solo viviendas de su edificio
+                if request.user.rol.nombre == 'Gerente' and hasattr(request.user, 'gerente') and request.user.gerente.edificio:
+                    viviendas = viviendas.filter(edificio=request.user.gerente.edificio)
             
             # Monto a aplicar
             monto = monto_personalizado if monto_personalizado else concepto.monto_base
@@ -357,6 +413,9 @@ class PagoListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(fecha_pago__lte=fecha_hasta)
         
         orden = self.request.GET.get('orden', '-fecha_pago')
+        campos_validos = ['fecha_pago', '-fecha_pago', 'monto', '-monto', 'estado', '-estado']
+        if orden not in campos_validos:
+            orden = '-fecha_pago'
         queryset = queryset.order_by(orden)
         
         return queryset
@@ -406,7 +465,7 @@ class PagoListView(LoginRequiredMixin, ListView):
         
         return context
 
-class PagoCreateView(LoginRequiredMixin, CreateView):
+class PagoCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
     model = Pago
     form_class = PagoForm
     template_name = 'financiero/pago_form.html'
@@ -450,10 +509,17 @@ class PagoCreateView(LoginRequiredMixin, CreateView):
         messages.success(self.request, 'Pago registrado exitosamente.')
         return super().form_valid(form)
 
-class PagoDetailView(LoginRequiredMixin, DetailView):
+class PagoDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Pago
     template_name = 'financiero/pago_detail.html'
     context_object_name = 'pago'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -474,11 +540,18 @@ class PagoDetailView(LoginRequiredMixin, DetailView):
         
         return context
 
-class PagoUpdateView(LoginRequiredMixin, UpdateView):
+class PagoUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Pago
     form_class = PagoForm
     template_name = 'financiero/pago_form.html'
     success_url = reverse_lazy('pago-list')
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
     
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -513,6 +586,9 @@ def verificar_pago(request, pk):
     if pago.estado != 'PENDIENTE':
         messages.error(request, 'Este pago ya ha sido verificado o rechazado.')
         return redirect('pago-detail', pk=pk)
+    
+    if request.method != 'POST':
+        return render(request, 'financiero/pago_verificar.html', {'pago': pago})
     
     # Verificar el pago
     pago.verificar_pago(request.user)
@@ -662,6 +738,12 @@ class GastoListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+        es_gerente = hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente'
+        
+        # Gerente solo ve gastos que él registró
+        if es_gerente:
+            queryset = queryset.filter(registrado_por=user)
         
         # Filtrar por categoría
         categoria_id = self.request.GET.get('categoria')
@@ -709,6 +791,9 @@ class GastoListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
         
         # Ordenar
         orden = self.request.GET.get('orden', '-fecha')
+        campos_validos = ['fecha', '-fecha', 'monto', '-monto', 'estado', '-estado', 'categoria__nombre', '-categoria__nombre']
+        if orden not in campos_validos:
+            orden = '-fecha'
         queryset = queryset.order_by(orden)
         
         return queryset
@@ -766,12 +851,28 @@ class GastoDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = Gasto
     template_name = 'financiero/gasto_detail.html'
     context_object_name = 'gasto'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        es_gerente = hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente'
+        if es_gerente:
+            queryset = queryset.filter(registrado_por=user)
+        return queryset
 
 class GastoUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     model = Gasto
     form_class = GastoForm
     template_name = 'financiero/gasto_form.html'
     success_url = reverse_lazy('gasto-list')
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        es_gerente = hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente'
+        if es_gerente:
+            queryset = queryset.filter(registrado_por=user)
+        return queryset
     
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -785,10 +886,15 @@ class GastoUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
 @login_required
 def marcar_gasto_pagado(request, pk):
     """Vista para marcar un gasto como pagado"""
-    if not request.user.rol or request.user.rol.nombre != 'Administrador':
+    if not request.user.rol or request.user.rol.nombre not in ['Administrador', 'Gerente']:
         raise PermissionDenied
     
     gasto = get_object_or_404(Gasto, pk=pk)
+    
+    # Gerente solo puede actuar sobre gastos que registró
+    es_gerente = request.user.rol.nombre == 'Gerente'
+    if es_gerente and gasto.registrado_por != request.user:
+        raise PermissionDenied
     
     if gasto.estado != 'PENDIENTE':
         messages.error(request, 'Este gasto ya ha sido pagado o cancelado.')
@@ -812,10 +918,15 @@ def marcar_gasto_pagado(request, pk):
 @login_required
 def cancelar_gasto(request, pk):
     """Vista para cancelar un gasto"""
-    if not request.user.rol or request.user.rol.nombre != 'Administrador':
+    if not request.user.rol or request.user.rol.nombre not in ['Administrador', 'Gerente']:
         raise PermissionDenied
     
     gasto = get_object_or_404(Gasto, pk=pk)
+    
+    # Gerente solo puede actuar sobre gastos que registró
+    es_gerente = request.user.rol.nombre == 'Gerente'
+    if es_gerente and gasto.registrado_por != request.user:
+        raise PermissionDenied
     
     if gasto.estado != 'PENDIENTE':
         messages.error(request, 'Este gasto ya ha sido pagado o cancelado.')
@@ -829,7 +940,7 @@ def cancelar_gasto(request, pk):
     return render(request, 'financiero/gasto_cancelar.html', {'gasto': gasto})
 
 # Vistas para EstadoCuenta
-class EstadoCuentaListView(LoginRequiredMixin, ListView):
+class EstadoCuentaListView(LoginRequiredMixin, AccesoWebPermitidoMixin, ListView):
     model = EstadoCuenta
     template_name = 'financiero/estado_cuenta_list.html'
     context_object_name = 'estados_cuenta'
@@ -837,6 +948,11 @@ class EstadoCuentaListView(LoginRequiredMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+
+        # Gerente solo ve estados de cuenta de su edificio
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
         
         # Filtrar por vivienda o edificio
         vivienda_id = self.request.GET.get('vivienda')
@@ -878,6 +994,9 @@ class EstadoCuentaListView(LoginRequiredMixin, ListView):
         
         # Ordenar
         orden = self.request.GET.get('orden', '-fecha_fin')
+        campos_validos = ['fecha_fin', '-fecha_fin', 'fecha_inicio', '-fecha_inicio', 'saldo_final', '-saldo_final']
+        if orden not in campos_validos:
+            orden = '-fecha_fin'
         queryset = queryset.order_by(orden)
         
         return queryset
@@ -885,8 +1004,13 @@ class EstadoCuentaListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Agregar filtros al contexto
-        context['edificios'] = Edificio.objects.all()
-        context['viviendas'] = Vivienda.objects.filter(activo=True)
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            context['edificios'] = Edificio.objects.filter(pk=user.gerente.edificio.pk)
+            context['viviendas'] = Vivienda.objects.filter(edificio=user.gerente.edificio, activo=True)
+        else:
+            context['edificios'] = Edificio.objects.all()
+            context['viviendas'] = Vivienda.objects.filter(activo=True)
         
         # Valores actuales de filtros
         context['edificio_id'] = self.request.GET.get('edificio', '')
@@ -902,7 +1026,16 @@ class EstadoCuentaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, Create
     form_class = EstadoCuentaForm
     template_name = 'financiero/estado_cuenta_form.html'
     success_url = reverse_lazy('estado-cuenta-list')
-    
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        user = self.request.user
+        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
+            form.fields['vivienda'].queryset = Vivienda.objects.filter(
+                edificio=user.gerente.edificio, activo=True
+            ).select_related('edificio')
+        return form
+
     def form_valid(self, form):
         response = super().form_valid(form)
         estado_cuenta = self.object
@@ -911,10 +1044,17 @@ class EstadoCuentaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, Create
         messages.success(self.request, 'Estado de cuenta creado exitosamente.')
         return response
 
-class EstadoCuentaDetailView(LoginRequiredMixin, DetailView):
+class EstadoCuentaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
     model = EstadoCuenta
     template_name = 'financiero/estado_cuenta_detail.html'
     context_object_name = 'estado_cuenta'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente and user.gerente.edificio:
+            queryset = queryset.filter(vivienda__edificio=user.gerente.edificio)
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -930,10 +1070,16 @@ def estado_cuenta_pdf(request, pk):
     estado_cuenta = get_object_or_404(EstadoCuenta, pk=pk)
     
     # Verificar permisos
-    if not request.user.rol or request.user.rol.nombre != 'Administrador':
-        # Si no es admin, verificar que sea el residente de la vivienda
-        if not Residente.objects.filter(usuario=request.user, vivienda=estado_cuenta.vivienda).exists():
+    rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+    if rol_nombre == 'Administrador':
+        pass  # Admin accede a todo
+    elif rol_nombre == 'Gerente' and hasattr(request.user, 'gerente') and request.user.gerente and request.user.gerente.edificio:
+        if estado_cuenta.vivienda.edificio != request.user.gerente.edificio:
             raise PermissionDenied
+    elif Residente.objects.filter(usuario=request.user, vivienda=estado_cuenta.vivienda).exists():
+        pass  # Residente de esa vivienda
+    else:
+        raise PermissionDenied
     
     # Crear un buffer para el PDF
     buffer = io.BytesIO()
@@ -1083,10 +1229,16 @@ def estado_cuenta_pdf(request, pk):
 @login_required
 def enviar_estado_cuenta(request, pk):
     """Vista para enviar estado de cuenta por email"""
-    if not request.user.rol or request.user.rol.nombre != 'Administrador':
+    rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
         raise PermissionDenied
     
     estado_cuenta = get_object_or_404(EstadoCuenta, pk=pk)
+
+    # Gerente solo puede enviar de su edificio
+    if rol_nombre == 'Gerente' and hasattr(request.user, 'gerente') and request.user.gerente.edificio:
+        if estado_cuenta.vivienda.edificio != request.user.gerente.edificio:
+            raise PermissionDenied
     
     # Verificar si hay un PDF generado
     if not estado_cuenta.pdf_generado:
@@ -1127,7 +1279,8 @@ def enviar_estado_cuenta(request, pk):
 @login_required
 def generar_estados_cuenta(request):
     """Vista para generar estados de cuenta masivamente"""
-    if not request.user.rol or request.user.rol.nombre != 'Administrador':
+    rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ['Administrador', 'Gerente']:
         raise PermissionDenied
     
     if request.method == 'POST':
@@ -1140,12 +1293,25 @@ def generar_estados_cuenta(request):
             fecha_fin = form.cleaned_data['fecha_fin']
             
             # Determinar las viviendas a las que aplicar
+            gerente_edificio = None
+            if rol_nombre == 'Gerente' and hasattr(request.user, 'gerente') and request.user.gerente.edificio:
+                gerente_edificio = request.user.gerente.edificio
+
             if aplicar_a_todas:
-                viviendas = Vivienda.objects.filter(activo=True)
+                if gerente_edificio:
+                    viviendas = Vivienda.objects.filter(edificio=gerente_edificio, activo=True)
+                else:
+                    viviendas = Vivienda.objects.filter(activo=True)
             elif edificio:
+                if gerente_edificio and edificio != gerente_edificio:
+                    messages.error(request, 'Solo puedes generar estados de cuenta para tu edificio.')
+                    return redirect('estado-cuenta-list')
                 viviendas = Vivienda.objects.filter(edificio=edificio, activo=True)
             else:
-                viviendas = viviendas_seleccionadas
+                if gerente_edificio:
+                    viviendas = viviendas_seleccionadas.filter(edificio=gerente_edificio)
+                else:
+                    viviendas = viviendas_seleccionadas
             
             # Crear estados de cuenta para cada vivienda
             estados_creados = 0
@@ -1278,14 +1444,10 @@ def dashboard_financiero(request):
     # Gastos del mes actual (solo para admin/gerente)
     gastos_mes_actual = Decimal('0')
     if es_admin or es_gerente:
-        gastos_filters = filters_gastos.copy()
-        if edificio_id and not es_admin:
-            gastos_filters['edificio_id'] = edificio_id
-            
         gastos_mes_actual = Gasto.objects.filter(
             fecha__gte=inicio_mes_actual,
             fecha__lte=fin_mes_actual,
-            **gastos_filters
+            **filters_gastos
         ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
     
     # Balance del mes
@@ -1300,14 +1462,10 @@ def dashboard_financiero(request):
     
     gastos_mes_anterior = Decimal('0')
     if es_admin or es_gerente:
-        gastos_filters = filters_gastos.copy()
-        if edificio_id and not es_admin:
-            gastos_filters['edificio_id'] = edificio_id
-            
         gastos_mes_anterior = Gasto.objects.filter(
             fecha__gte=inicio_mes_anterior,
             fecha__lte=fin_mes_anterior,
-            **gastos_filters
+            **filters_gastos
         ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
     
     # Calcular tendencias
@@ -1362,14 +1520,10 @@ def dashboard_financiero(request):
         # Gastos del mes
         gastos = Decimal('0')
         if es_admin or es_gerente:
-            gastos_filters = filters_gastos.copy()
-            if edificio_id and not es_admin:
-                gastos_filters['edificio_id'] = edificio_id
-                
             gastos = Gasto.objects.filter(
                 fecha__gte=inicio_mes,
                 fecha__lte=fin_mes,
-                **gastos_filters
+                **filters_gastos
             ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
         
         datos_meses.append({
@@ -1382,14 +1536,10 @@ def dashboard_financiero(request):
     # DATOS PARA GRÁFICO DE GASTOS POR CATEGORÍA
     datos_categorias = []
     if es_admin or es_gerente:
-        gastos_filters = filters_gastos.copy()
-        if edificio_id and not es_admin:
-            gastos_filters['edificio_id'] = edificio_id
-            
         categorias_gastos = Gasto.objects.filter(
             fecha__gte=inicio_mes_actual,
             fecha__lte=fin_mes_actual,
-            **gastos_filters
+            **filters_gastos
         ).values('categoria__nombre').annotate(
             total=Sum('monto')
         ).order_by('-total')
@@ -1408,11 +1558,7 @@ def dashboard_financiero(request):
     
     ultimos_gastos = []
     if es_admin or es_gerente:
-        gastos_filters = filters_gastos.copy()
-        if edificio_id and not es_admin:
-            gastos_filters['edificio_id'] = edificio_id
-            
-        ultimos_gastos = Gasto.objects.filter(**gastos_filters).select_related(
+        ultimos_gastos = Gasto.objects.filter(**filters_gastos).select_related(
             'categoria'
         ).order_by('-fecha')[:5]
     
@@ -1533,19 +1679,24 @@ def api_resumen_financiero(request):
     """API para obtener resumen financiero"""
     # Verificar permisos
     es_admin = request.user.rol and request.user.rol.nombre == 'Administrador'
+    es_gerente = request.user.rol and request.user.rol.nombre == 'Gerente'
     es_residente = hasattr(request.user, 'residente')
     
-    if not (es_admin or es_residente):
+    if not (es_admin or es_gerente or es_residente):
         return JsonResponse({"error": "No tienes permisos para ver esta información"}, status=403)
     
     # Filtrar por vivienda si es residente
     vivienda_id = None
     if es_residente:
         vivienda_id = request.user.residente.vivienda_id
-    else:
+    elif es_admin:
         vivienda_id = request.GET.get('vivienda')
     
-    edificio_id = request.GET.get('edificio') if es_admin else None
+    edificio_id = None
+    if es_admin:
+        edificio_id = request.GET.get('edificio')
+    elif es_gerente and hasattr(request.user, 'gerente') and request.user.gerente.edificio:
+        edificio_id = request.user.gerente.edificio.pk
     
     # Período
     hoy = timezone.now().date()
@@ -1573,13 +1724,20 @@ def api_resumen_financiero(request):
         **filters_pagos
     ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
     
-    # Calcular gastos del mes (solo para administradores)
+    # Calcular gastos del mes (para administradores y gerentes)
     gastos_mes = Decimal('0')
     if es_admin:
         gastos_mes = Gasto.objects.filter(
             fecha__gte=inicio_mes,
             fecha__lte=fin_mes,
             estado='PAGADO'
+        ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
+    elif es_gerente:
+        gastos_mes = Gasto.objects.filter(
+            fecha__gte=inicio_mes,
+            fecha__lte=fin_mes,
+            estado='PAGADO',
+            registrado_por=request.user
         ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
     
     # Calcular balance
@@ -1676,14 +1834,10 @@ def dashboard_financiero_api(request):
         # Gastos del mes
         gastos = Decimal('0')
         if es_admin or es_gerente:
-            gastos_filters = filters_gastos.copy()
-            if edificio_id and not es_admin:
-                gastos_filters['edificio_id'] = edificio_id
-                
             gastos = Gasto.objects.filter(
                 fecha__gte=inicio_mes,
                 fecha__lte=fin_mes,
-                **gastos_filters
+                **filters_gastos
             ).aggregate(total=Coalesce(Sum('monto', output_field=DecimalField()), Decimal('0')))['total']
         
         datos_meses.append({
@@ -1702,14 +1856,10 @@ def dashboard_financiero_api(request):
     
     datos_categorias = []
     if es_admin or es_gerente:
-        gastos_filters = filters_gastos.copy()
-        if edificio_id and not es_admin:
-            gastos_filters['edificio_id'] = edificio_id
-            
         categorias_gastos = Gasto.objects.filter(
             fecha__gte=inicio_mes_actual,
             fecha__lte=fin_mes_actual,
-            **gastos_filters
+            **filters_gastos
         ).values('categoria__nombre').annotate(
             total=Sum('monto')
         ).order_by('-total')

@@ -1,6 +1,6 @@
 # financiero/signals.py - Señales para manejo automático de cuotas y pagos
 from django.db.models.signals import post_save, post_delete, pre_save
-from django.db import models
+from django.db import models, transaction
 from django.dispatch import receiver
 from django.utils import timezone
 from decimal import Decimal
@@ -14,41 +14,41 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=PagoCuota)
 def actualizar_cuota_al_crear_pago_cuota(sender, instance, created, **kwargs):
     """
-    Cuando se crea o actualiza un PagoCuota, actualiza el estado de la cuota
+    Cuando se crea o actualiza un PagoCuota, actualiza el estado de la cuota.
+    Solo marca como pagada si el Pago asociado está VERIFICADO.
+    NO modifica cuota.monto (el monto original debe mantenerse intacto).
     """
     try:
         cuota = instance.cuota
         pago = instance.pago
-        
+
         # Solo procesar si el pago está verificado
         if pago.estado != 'VERIFICADO':
             return
-        
-        # Recalcular si la cuota está completamente pagada
-        total_pagado = PagoCuota.objects.filter(
-            cuota=cuota,
-            pago__estado='VERIFICADO'
-        ).aggregate(
-            total=models.Sum('monto_aplicado')
-        )['total'] or Decimal('0')
-        
-        total_cuota = cuota.total_a_pagar()
-        
-        if total_pagado >= total_cuota:
-            # Cuota completamente pagada
-            cuota.pagada = True
-            cuota.recargo = Decimal('0')  # Limpiar recargos
-            cuota.save(update_fields=['pagada', 'recargo'])
-            logger.info(f"Cuota {cuota.id} marcada como pagada")
-        else:
-            # Pago parcial - actualizar monto pendiente
-            monto_pendiente = cuota.monto - total_pagado
-            if monto_pendiente > 0:
-                cuota.monto = monto_pendiente
-                cuota.pagada = False
-                cuota.save(update_fields=['monto', 'pagada'])
-                logger.info(f"Cuota {cuota.id} actualizada con pago parcial")
-    
+
+        with transaction.atomic():
+            # Recalcular si la cuota está completamente pagada
+            total_pagado = PagoCuota.objects.filter(
+                cuota=cuota,
+                pago__estado='VERIFICADO'
+            ).aggregate(
+                total=models.Sum('monto_aplicado')
+            )['total'] or Decimal('0')
+
+            total_cuota = cuota.total_a_pagar()
+
+            if total_pagado >= total_cuota:
+                cuota.pagada = True
+                cuota.recargo = Decimal('0')
+                cuota.save(update_fields=['pagada', 'recargo'])
+                logger.info(f"Cuota {cuota.id} marcada como pagada")
+            else:
+                # Pago parcial: solo asegurar que pagada=False, NO modificar monto
+                if cuota.pagada:
+                    cuota.pagada = False
+                    cuota.save(update_fields=['pagada'])
+                logger.info(f"Cuota {cuota.id} con pago parcial: ${total_pagado}/{total_cuota}")
+
     except Exception as e:
         logger.error(f"Error al actualizar cuota en PagoCuota {instance.id}: {e}")
 
@@ -60,21 +60,28 @@ def revertir_cuota_al_eliminar_pago_cuota(sender, instance, **kwargs):
     try:
         cuota = instance.cuota
         pago = instance.pago
-        
+
         # Solo procesar si el pago estaba verificado
         if pago.estado != 'VERIFICADO':
             return
-        
-        # Si la cuota estaba marcada como pagada, revertir
-        if cuota.pagada:
-            cuota.pagada = False
-            
-            # Restaurar el monto original si es necesario
-            # (esto es complejo, por simplicidad recalcular recargos)
-            cuota.actualizar_recargo()
-            cuota.save(update_fields=['pagada', 'recargo'])
-            logger.info(f"Cuota {cuota.id} revertida por eliminación de pago")
-    
+
+        with transaction.atomic():
+            # Recalcular total pagado restante después de la eliminación
+            total_pagado = PagoCuota.objects.filter(
+                cuota=cuota,
+                pago__estado='VERIFICADO'
+            ).aggregate(
+                total=models.Sum('monto_aplicado')
+            )['total'] or Decimal('0')
+
+            total_cuota = cuota.total_a_pagar()
+
+            if total_pagado < total_cuota and cuota.pagada:
+                cuota.pagada = False
+                cuota.actualizar_recargo()
+                cuota.save(update_fields=['pagada', 'recargo'])
+                logger.info(f"Cuota {cuota.id} revertida por eliminación de pago")
+
     except Exception as e:
         logger.error(f"Error al revertir cuota en eliminación de PagoCuota: {e}")
 
@@ -88,11 +95,11 @@ def procesar_pago_verificado(sender, instance, created, **kwargs):
         if instance.estado == 'VERIFICADO' and not created:
             # Verificar si ya tiene cuotas asignadas
             cuotas_asignadas = PagoCuota.objects.filter(pago=instance).exists()
-            
+
             if not cuotas_asignadas and instance.monto > 0:
-                # Auto-asignar a cuotas pendientes más antiguas
-                auto_asignar_pago_a_cuotas(instance)
-    
+                with transaction.atomic():
+                    auto_asignar_pago_a_cuotas(instance)
+
     except Exception as e:
         logger.error(f"Error al procesar pago verificado {instance.id}: {e}")
 
