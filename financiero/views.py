@@ -3,7 +3,7 @@ from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse,FileResponse, HttpResponse
+from django.http import JsonResponse, FileResponse, HttpResponse, HttpResponseRedirect
 from django.db.models import Sum, Q, F, Count, DecimalField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -246,36 +246,90 @@ class CuotaCreateView(LoginRequiredMixin, AccesoWebPermitidoMixin, CreateView):
     template_name = 'financiero/cuota_form.html'
     success_url = reverse_lazy('cuota-list')
 
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        user = self.request.user
-        if user.rol and user.rol.nombre == 'Gerente' and hasattr(user, 'gerente') and user.gerente.edificio:
-            form.fields['vivienda'].queryset = Vivienda.objects.filter(
-                edificio=user.gerente.edificio, activo=True
-            ).select_related('edificio')
-        return form
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        import json
+        ctx = super().get_context_data(**kwargs)
+        viviendas = Vivienda.objects.filter(activo=True, estado='OCUPADO').values('id', 'monto_expensa')
+        ctx['viviendas_monto_json'] = json.dumps({
+            str(v['id']): float(v['monto_expensa']) if v['monto_expensa'] else None
+            for v in viviendas
+        })
+        return ctx
 
     def form_valid(self, form):
+        from alertas.models import Alerta
+        vivienda_val = form.cleaned_data.get('vivienda_seleccion')
+        concepto_tipo = form.cleaned_data.get('concepto_tipo')
+
+        if vivienda_val == CuotaForm.TODAS_VIVIENDAS:
+            # Crear cuota por cada vivienda ocupada
+            nombre_concepto = ('Expensas' if concepto_tipo == 'expensas'
+                               else form.cleaned_data.get('concepto_nombre', '').strip())
+            concepto, _ = ConceptoCuota.objects.get_or_create(
+                nombre=nombre_concepto,
+                defaults={'monto_base': 0, 'periodicidad': 'MENSUAL', 'activo': True}
+            )
+
+            viviendas = Vivienda.objects.filter(activo=True, estado='OCUPADO').select_related('edificio')
+            cuotas_creadas = 0
+            sin_monto = []
+
+            for vivienda in viviendas:
+                if concepto_tipo == 'expensas':
+                    if not vivienda.monto_expensa:
+                        sin_monto.append(vivienda.numero)
+                        continue
+                    monto = vivienda.monto_expensa
+                else:
+                    monto = form.cleaned_data['monto']
+
+                cuota = Cuota(
+                    vivienda=vivienda,
+                    concepto=concepto,
+                    monto=monto,
+                    fecha_emision=timezone.now().date(),
+                    fecha_vencimiento=form.cleaned_data['fecha_vencimiento'],
+                    notas=form.cleaned_data.get('notas', ''),
+                )
+                cuota.save()
+                cuotas_creadas += 1
+
+                Alerta.objects.create(
+                    tipo='Aviso importante',
+                    descripcion=(
+                        f"Nueva cuota generada para vivienda {vivienda.numero} - {vivienda.edificio.nombre}: "
+                        f"{concepto.nombre} por ${monto:.2f}. "
+                        f"Vence: {form.cleaned_data['fecha_vencimiento'].strftime('%d/%m/%Y')}."
+                    ),
+                    enviado_por=self.request.user,
+                    edificio=vivienda.edificio,
+                    vivienda=vivienda,
+                )
+
+            messages.success(self.request, f'Se crearon {cuotas_creadas} cuota(s). Residentes notificados.')
+            return redirect('cuota-list')
+
+        # Vivienda específica
         response = super().form_valid(form)
         cuota = self.object
         vivienda = cuota.vivienda
-
-        # Crear alerta de notificación para los residentes de la vivienda
-        from alertas.models import Alerta
-        descripcion = (
-            f"Se ha generado una nueva cuota para la vivienda {vivienda.numero} - {vivienda.edificio.nombre}: "
-            f"{cuota.concepto.nombre} por ${cuota.monto:.2f}. "
-            f"Fecha de vencimiento: {cuota.fecha_vencimiento.strftime('%d/%m/%Y')}."
-        )
         Alerta.objects.create(
             tipo='Aviso importante',
-            descripcion=descripcion,
+            descripcion=(
+                f"Nueva cuota generada para vivienda {vivienda.numero} - {vivienda.edificio.nombre}: "
+                f"{cuota.concepto.nombre} por ${cuota.monto:.2f}. "
+                f"Vence: {cuota.fecha_vencimiento.strftime('%d/%m/%Y')}."
+            ),
             enviado_por=self.request.user,
             edificio=vivienda.edificio,
             vivienda=vivienda,
         )
-
-        messages.success(self.request, 'Cuota creada exitosamente. Se notificó a los residentes de la vivienda.')
+        messages.success(self.request, 'Cuota creada. Se notificó a los residentes de la vivienda.')
         return response
 
 class CuotaDetailView(LoginRequiredMixin, AccesoWebPermitidoMixin, DetailView):
@@ -302,7 +356,12 @@ class CuotaUpdateView(LoginRequiredMixin, AccesoWebPermitidoMixin, UpdateView):
     form_class = CuotaForm
     template_name = 'financiero/cuota_form.html'
     success_url = reverse_lazy('cuota-list')
-    
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user

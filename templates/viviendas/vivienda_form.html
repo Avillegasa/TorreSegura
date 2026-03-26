@@ -45,6 +45,18 @@
                             {{ form.estado|as_crispy_field }}
                         </div>
                     </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            {{ form.monto_expensa|as_crispy_field }}
+                        </div>
+                        <div class="col-md-6 d-flex align-items-center">
+                            <small class="text-muted mt-3">
+                                <i class="fas fa-info-circle"></i>
+                                Este monto se usará automáticamente al generar cuotas de tipo Expensas.
+                            </small>
+                        </div>
+                    </div>
                     
                     <div class="mt-4 d-flex justify-content-between">
                         <a href="{% url 'vivienda-list' %}" class="btn btn-secondary">

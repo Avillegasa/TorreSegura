@@ -71,6 +71,10 @@ class Vivienda(models.Model):
     habitaciones = models.PositiveIntegerField(default=1)
     baños = models.PositiveIntegerField(default=1)
     estado = models.CharField(max_length=15, choices=ESTADOS, default='DESOCUPADO')
+    monto_expensa = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Monto mensual de expensa asignado a esta vivienda"
+    )
     activo = models.BooleanField(default=True, help_text="Indica si la vivienda está activa o ha sido dada de baja")
     fecha_baja = models.DateField(null=True, blank=True, help_text="Fecha en la que se dio de baja la vivienda")
     motivo_baja = models.TextField(blank=True, null=True, help_text="Motivo por el cual se dio de baja la vivienda")
