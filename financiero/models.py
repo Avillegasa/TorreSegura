@@ -4,7 +4,60 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from usuarios.models import Usuario
-from viviendas.models import Vivienda, Residente
+from viviendas.models import Vivienda, Residente, Edificio
+
+class CuentaBancaria(models.Model):
+    """
+    Cuenta bancaria BNB asociada a un edificio.
+    Solo el Administrador puede crear/editar.
+    Almacena las credenciales de la API QR Simple de BNB.
+    """
+    BANCO_CHOICES = [
+        ('BNB', 'Banco Nacional de Bolivia'),
+    ]
+
+    edificio = models.OneToOneField(
+        Edificio, on_delete=models.CASCADE, related_name='cuenta_bancaria',
+    )
+    banco = models.CharField(max_length=20, choices=BANCO_CHOICES, default='BNB')
+    numero_cuenta = models.CharField(max_length=30, help_text="Número de cuenta bancaria")
+    titular = models.CharField(max_length=200, help_text="Nombre del titular de la cuenta")
+
+    # Credenciales API BNB (solo visible para Admin)
+    bnb_account_id = models.CharField(
+        max_length=200, blank=True,
+        help_text="accountId proporcionado por BNB (encriptado base64)",
+    )
+    bnb_authorization_id = models.CharField(
+        max_length=200, blank=True,
+        help_text="authorizationId proporcionado por BNB (encriptado base64)",
+    )
+
+    activa = models.BooleanField(default=True)
+    verificada = models.BooleanField(
+        default=False,
+        help_text="Se marca True cuando se valida la conexión con BNB exitosamente",
+    )
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+    registrado_por = models.ForeignKey(
+        Usuario, on_delete=models.SET_NULL, null=True, related_name='cuentas_bancarias_registradas',
+    )
+
+    class Meta:
+        verbose_name = "Cuenta Bancaria"
+        verbose_name_plural = "Cuentas Bancarias"
+
+    def __str__(self):
+        return f"{self.get_banco_display()} - {self.numero_cuenta} ({self.edificio.nombre})"
+
+    def tiene_credenciales(self):
+        return bool(self.bnb_account_id and self.bnb_authorization_id)
+
+    def esta_lista(self):
+        """True si la cuenta está activa, verificada y tiene credenciales."""
+        return self.activa and self.verificada and self.tiene_credenciales()
+
 
 class ConceptoCuota(models.Model):
     """
@@ -68,8 +121,8 @@ class Cuota(models.Model):
             # Calcular recargo acumulado
             porcentaje_recargo_mensual = self.concepto.porcentaje_recargo / 100
             recargo_acumulado = self.monto * porcentaje_recargo_mensual * meses_retraso
-            
-            return recargo_acumulado
+
+            return round(recargo_acumulado, 2)
         return 0
     
     def actualizar_recargo(self):
@@ -122,6 +175,7 @@ class Pago(models.Model):
         ('TRANSFERENCIA', 'Transferencia Bancaria'),
         ('CHEQUE', 'Cheque'),
         ('TARJETA', 'Tarjeta de Crédito/Débito'),
+        ('QR_BNB', 'QR BNB'),
         ('OTRO', 'Otro'),
     ]
     
@@ -261,6 +315,12 @@ class Gasto(models.Model):
     ]
     
     categoria = models.ForeignKey(CategoriaGasto, on_delete=models.PROTECT, related_name='gastos')
+    edificio = models.ForeignKey(
+        Edificio, on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='gastos',
+        help_text="Edificio al que se asocia este gasto",
+    )
     concepto = models.CharField(max_length=200)
     descripcion = models.TextField(blank=True)
     monto = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
@@ -412,5 +472,62 @@ class EstadoCuenta(models.Model):
         indexes = [
             models.Index(fields=['vivienda', 'fecha_fin']),
         ]
+
+class PagoQR(models.Model):
+    """
+    Registra una solicitud de pago por QR BNB.
+    Se crea al generar el QR y se vincula al Pago cuando se confirma.
+    """
+    QR_ESTADO_CHOICES = [
+        ('GENERADO', 'QR Generado'),
+        ('PAGADO', 'Pagado'),
+        ('EXPIRADO', 'Expirado'),
+        ('ERROR', 'Error'),
+    ]
+
+    vivienda = models.ForeignKey(Vivienda, on_delete=models.CASCADE, related_name='pagos_qr')
+    residente = models.ForeignKey(Residente, on_delete=models.SET_NULL, null=True, blank=True)
+    cuotas = models.ManyToManyField(Cuota, related_name='pagos_qr')
+    monto = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
+    glosa = models.CharField(max_length=200)
+
+    # Datos del QR de BNB
+    qr_id = models.CharField(max_length=100, unique=True, help_text="ID del QR devuelto por BNB")
+    qr_image = models.TextField(blank=True, help_text="Imagen QR en base64")
+    qr_estado = models.CharField(max_length=15, choices=QR_ESTADO_CHOICES, default='GENERADO')
+    fecha_expiracion = models.DateField()
+
+    # Relación con el Pago final (se llena cuando BNB confirma el pago)
+    pago = models.OneToOneField(Pago, on_delete=models.SET_NULL, null=True, blank=True, related_name='pago_qr')
+
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Pago QR BNB"
+        verbose_name_plural = "Pagos QR BNB"
+        ordering = ['-fecha_creacion']
+        indexes = [
+            models.Index(fields=['qr_estado', '-fecha_creacion']),
+            models.Index(fields=['vivienda', 'qr_estado']),
+        ]
+
+    def __str__(self):
+        return f"QR {self.qr_id} - {self.vivienda} - Bs{self.monto} ({self.qr_estado})"
+
+    def esta_pendiente(self):
+        return self.qr_estado == 'GENERADO'
+
+    def marcar_pagado(self, pago_obj=None):
+        """Marca el QR como pagado y vincula al objeto Pago."""
+        self.qr_estado = 'PAGADO'
+        if pago_obj:
+            self.pago = pago_obj
+        self.save()
+
+    def marcar_expirado(self):
+        self.qr_estado = 'EXPIRADO'
+        self.save()
+
 
 # Señales se registran en financiero/signals.py (importado por apps.py ready())

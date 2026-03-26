@@ -8,9 +8,24 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.db.models import Q
+from datetime import datetime
 import json
-from .models import Alerta
-from .serializers import AlertaSerializer, CrearAlertaSerializer
+from .models import Alerta, Anuncio, OpcionVoto, Voto
+from .serializers import AlertaSerializer, CrearAlertaSerializer, AnuncioSerializer, CrearAnuncioSerializer
+
+
+def _resolver_edificio_usuario(user):
+    """Devuelve el edificio asociado al usuario según su rol."""
+    if hasattr(user, 'residente') and user.residente and user.residente.vivienda:
+        return user.residente.vivienda.edificio
+    if hasattr(user, 'vigilante') and user.vigilante:
+        return user.vigilante.edificio
+    if hasattr(user, 'gerente') and user.gerente:
+        return user.gerente.edificio
+    if hasattr(user, 'empleado') and user.empleado:
+        return user.empleado.edificio
+    return None
 
 class AlertaCreateView(CreateAPIView):
     queryset = Alerta.objects.all()
@@ -68,83 +83,21 @@ class AlertaViewSet(ModelViewSet):
             raise PermissionDenied('Solo el administrador puede eliminar alertas')
         instance.delete()
 
-def _resolver_edificio_usuario(user):
-    """Obtiene el edificio del usuario según su rol."""
-    # Residente → vivienda → edificio
-    if hasattr(user, 'residente') and user.residente and getattr(user.residente, 'vivienda', None):
-        return user.residente.vivienda.edificio
-    # Vigilante → edificio
-    if hasattr(user, 'vigilante') and user.vigilante:
-        return user.vigilante.edificio
-    # Gerente → edificio
-    if hasattr(user, 'gerente') and user.gerente:
-        return user.gerente.edificio
-    # Empleado → edificio
-    if hasattr(user, 'empleado') and user.empleado:
-        return user.empleado.edificio
-    return None
-
-
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def crear_alerta(request):
     """
-    Crear una nueva alerta. Auto-asigna el edificio del usuario si no se envía.
+    Crear una nueva alerta (auto-asigna edificio del usuario)
     """
-    data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
-
-    # Auto-asignar edificio si no viene en el request
-    if not data.get('edificio'):
-        edificio = _resolver_edificio_usuario(request.user)
-        if edificio:
-            data['edificio'] = edificio.id
-
-    serializer = CrearAlertaSerializer(data=data)
+    serializer = CrearAlertaSerializer(data=request.data)
     if serializer.is_valid():
-        alerta = serializer.save(enviado_por=request.user)
+        edificio = _resolver_edificio_usuario(request.user)
+        alerta = serializer.save(enviado_por=request.user, edificio=edificio)
 
-        # Retornar la alerta completa con información del usuario
         response_serializer = AlertaSerializer(alerta)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def alertas_nuevas(request):
-    """
-    Endpoint de polling: retorna alertas del edificio del usuario creadas después de `since` (ISO timestamp).
-    GET /api/v1/alertas/nuevas/?since=2026-03-18T12:00:00Z
-    """
-    since_str = request.query_params.get('since')
-    if not since_str:
-        return Response({'error': 'Parámetro "since" requerido (ISO timestamp)'}, status=status.HTTP_400_BAD_REQUEST)
-
-    from django.utils.dateparse import parse_datetime
-    since = parse_datetime(since_str)
-    if not since:
-        return Response({'error': 'Formato de fecha inválido. Use ISO 8601.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Hacer timezone-aware si es naive
-    if timezone.is_naive(since):
-        since = timezone.make_aware(since)
-
-    user = request.user
-    edificio = _resolver_edificio_usuario(user)
-
-    if not edificio:
-        return Response([], status=status.HTTP_200_OK)
-
-    alertas = (
-        Alerta.objects.filter(edificio=edificio, fecha__gt=since)
-        .exclude(enviado_por=user)  # No notificar de tus propias alertas
-        .select_related('enviado_por')
-        .order_by('-fecha')
-    )
-
-    serializer = AlertaSerializer(alertas, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -254,46 +207,6 @@ def lista_alertas(request):
     return render(request, 'alertas/lista_alertas.html', context)
 
 @login_required
-@require_http_methods(["GET"])
-def alertas_nuevas_web(request):
-    """
-    Polling endpoint para la web: retorna alertas del edificio creadas después de `since`.
-    """
-    since_str = request.GET.get('since')
-    if not since_str:
-        return JsonResponse({'error': 'Parámetro "since" requerido'}, status=400)
-
-    from django.utils.dateparse import parse_datetime
-    since = parse_datetime(since_str)
-    if not since:
-        return JsonResponse({'error': 'Formato de fecha inválido'}, status=400)
-
-    if timezone.is_naive(since):
-        since = timezone.make_aware(since)
-
-    user = request.user
-    edificio = _resolver_edificio_usuario(user)
-
-    alertas = Alerta.objects.filter(fecha__gt=since).exclude(enviado_por=user).order_by('-fecha')
-
-    if edificio and not user.is_superuser:
-        alertas = alertas.filter(edificio=edificio)
-
-    data = []
-    for a in alertas.select_related('enviado_por')[:20]:
-        data.append({
-            'id': a.id,
-            'tipo': a.tipo,
-            'descripcion': a.descripcion,
-            'enviado_por': a.enviado_por.get_full_name() or a.enviado_por.username,
-            'fecha': a.fecha.isoformat(),
-            'estado': a.estado,
-        })
-
-    return JsonResponse(data, safe=False)
-
-
-@login_required
 @require_http_methods(["PUT"])
 def cambiar_estado_web(request, pk):
     """
@@ -371,6 +284,260 @@ def cambiar_estado_web(request, pk):
         )
     except Exception:
         return JsonResponse(
-            {'error': 'Error interno del servidor'}, 
+            {'error': 'Error interno del servidor'},
             status=500
         )
+
+
+# ─── Polling de alertas nuevas ───────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def alertas_nuevas(request):
+    """
+    Endpoint de polling para la app móvil (JWT).
+    Devuelve alertas del edificio del usuario creadas después de ?since=<ISO>.
+    Solo para Vigilante y Gerente.
+    """
+    rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ('Vigilante', 'Gerente'):
+        return Response([])
+
+    since = request.query_params.get('since')
+    if not since:
+        return Response([])
+
+    try:
+        since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return Response({'error': 'Formato de fecha inválido'}, status=status.HTTP_400_BAD_REQUEST)
+
+    edificio = _resolver_edificio_usuario(request.user)
+    if not edificio:
+        return Response([])
+
+    nuevas = (
+        Alerta.objects
+        .filter(edificio=edificio, fecha__gt=since_dt)
+        .exclude(enviado_por=request.user)
+        .select_related('enviado_por')
+        .order_by('-fecha')[:20]
+    )
+    serializer = AlertaSerializer(nuevas, many=True)
+    return Response(serializer.data)
+
+
+@login_required
+def alertas_nuevas_web(request):
+    """
+    Endpoint de polling para el dashboard web (sesión Django).
+    Devuelve alertas creadas después de ?since=<ISO>.
+    Solo para Administrador y Gerente.
+    """
+    rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+    if rol_nombre not in ('Administrador', 'Gerente'):
+        return JsonResponse([], safe=False)
+
+    since = request.GET.get('since')
+    if not since:
+        return JsonResponse([], safe=False)
+
+    try:
+        since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Formato de fecha inválido'}, status=400)
+
+    alertas = Alerta.objects.filter(fecha__gt=since_dt).select_related('enviado_por', 'atendido_por')
+
+    # Gerente: solo su edificio
+    if rol_nombre == 'Gerente' and hasattr(request.user, 'gerente') and request.user.gerente and request.user.gerente.edificio:
+        edificio = request.user.gerente.edificio
+        alertas = alertas.filter(
+            Q(enviado_por__residente__vivienda__edificio=edificio) |
+            Q(enviado_por__vigilante__edificio=edificio) |
+            Q(enviado_por__empleado__edificio=edificio) |
+            Q(enviado_por__gerente__edificio=edificio)
+        )
+
+    alertas = alertas.order_by('-fecha')[:20]
+
+    data = []
+    for a in alertas:
+        data.append({
+            'id': a.id,
+            'tipo': a.tipo,
+            'descripcion': a.descripcion,
+            'estado': a.estado,
+            'fecha': a.fecha.isoformat(),
+            'enviado_por': a.enviado_por.get_full_name() or a.enviado_por.username,
+        })
+
+    return JsonResponse(data, safe=False)
+
+
+# ─── Alertas del edificio (para app, todos los roles) ─────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def alertas_edificio(request):
+    """
+    Lista las alertas del edificio del usuario autenticado.
+    Disponible para todos los roles (Residente, Vigilante, Gerente).
+    """
+    edificio = _resolver_edificio_usuario(request.user)
+    if not edificio:
+        return Response([])
+
+    alertas = (
+        Alerta.objects
+        .filter(edificio=edificio)
+        .select_related('enviado_por', 'atendido_por')
+        .order_by('-fecha')[:50]
+    )
+    serializer = AlertaSerializer(alertas, many=True)
+    return Response(serializer.data)
+
+
+# ─── Anuncios del condominio ─────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def listar_anuncios(request):
+    """
+    Lista los anuncios del edificio del usuario.
+    """
+    edificio = _resolver_edificio_usuario(request.user)
+    if not edificio:
+        return Response([])
+
+    anuncios = (
+        Anuncio.objects
+        .filter(edificio=edificio, activo=True)
+        .select_related('autor')
+        .prefetch_related('opciones__votos__usuario')
+        .order_by('-fijado', '-fecha_creacion')[:50]
+    )
+    serializer = AnuncioSerializer(anuncios, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def crear_anuncio(request):
+    """
+    Crear un nuevo anuncio. Gerente y Residente pueden crear.
+    Si es_votacion=True, se crean también las opciones de voto.
+    Solo Gerente/Admin pueden crear votaciones.
+    """
+    serializer = CrearAnuncioSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+
+    edificio = _resolver_edificio_usuario(request.user)
+    if not edificio:
+        return Response(
+            {'error': 'No tienes un edificio asignado.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    es_votacion = data.get('es_votacion', False)
+    opciones_texto = data.get('opciones', [])
+
+    # Solo Gerente/Admin puede crear votaciones
+    if es_votacion:
+        rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+        if rol_nombre not in ('Administrador', 'Gerente'):
+            return Response(
+                {'error': 'Solo el gerente o administrador puede crear votaciones.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if len(opciones_texto) < 2:
+            return Response(
+                {'error': 'Una votación necesita al menos 2 opciones.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    anuncio = Anuncio.objects.create(
+        titulo=data['titulo'],
+        contenido=data['contenido'],
+        categoria=data.get('categoria', 'general'),
+        autor=request.user,
+        edificio=edificio,
+        es_votacion=es_votacion,
+        voto_anonimo=data.get('voto_anonimo', False),
+        fecha_cierre_votacion=data.get('fecha_cierre_votacion'),
+    )
+
+    # Crear opciones de voto
+    if es_votacion and opciones_texto:
+        for i, texto in enumerate(opciones_texto):
+            OpcionVoto.objects.create(anuncio=anuncio, texto=texto.strip(), orden=i)
+
+    response_serializer = AnuncioSerializer(anuncio, context={'request': request})
+    return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def votar_anuncio(request, pk):
+    """
+    Registrar un voto en un anuncio.
+    Body: { "opcion_id": 5 }
+    Un usuario solo puede votar una vez por anuncio.
+    """
+    try:
+        anuncio = Anuncio.objects.get(pk=pk, activo=True)
+    except Anuncio.DoesNotExist:
+        return Response({'error': 'Anuncio no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not anuncio.es_votacion:
+        return Response({'error': 'Este anuncio no tiene votación.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not anuncio.votacion_abierta:
+        return Response({'error': 'La votación ya cerró.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    opcion_id = request.data.get('opcion_id')
+    if not opcion_id:
+        return Response({'error': 'Debes seleccionar una opción.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        opcion = OpcionVoto.objects.get(pk=opcion_id, anuncio=anuncio)
+    except OpcionVoto.DoesNotExist:
+        return Response({'error': 'Opción no válida.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Verificar si ya votó en este anuncio (cualquier opción)
+    voto_existente = Voto.objects.filter(
+        opcion__anuncio=anuncio, usuario=request.user
+    ).first()
+
+    if voto_existente:
+        # Cambiar voto
+        voto_existente.opcion = opcion
+        voto_existente.save(update_fields=['opcion'])
+    else:
+        Voto.objects.create(opcion=opcion, usuario=request.user)
+
+    # Devolver anuncio actualizado
+    anuncio.refresh_from_db()
+    response_serializer = AnuncioSerializer(anuncio, context={'request': request})
+    return Response(response_serializer.data)
+
+
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def eliminar_anuncio(request, pk):
+    """
+    Eliminar un anuncio. Solo el autor o Gerente/Admin pueden eliminar.
+    """
+    try:
+        anuncio = Anuncio.objects.get(pk=pk)
+    except Anuncio.DoesNotExist:
+        return Response({'error': 'Anuncio no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    rol_nombre = getattr(getattr(request.user, 'rol', None), 'nombre', None)
+    if anuncio.autor != request.user and rol_nombre not in ('Administrador', 'Gerente'):
+        return Response({'error': 'No tienes permisos.'}, status=status.HTTP_403_FORBIDDEN)
+
+    anuncio.activo = False
+    anuncio.save(update_fields=['activo'])
+    return Response({'mensaje': 'Anuncio eliminado.'}, status=status.HTTP_200_OK)

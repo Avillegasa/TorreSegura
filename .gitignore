@@ -29,6 +29,7 @@ Thumbs.db
 # Archivos de base de datos local
 db.sqlite3
 db.sqlite3.bak.*
+/db
 
 # Archivos generados / uploads (no versionar)
 media/

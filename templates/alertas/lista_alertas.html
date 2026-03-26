@@ -642,139 +642,83 @@ function cambiarEstado(alertaId, nuevoEstado, element) {
     });
 }
 
-// ============================================================
-// POLLING DE ALERTAS NUEVAS + SONIDO DE NOTIFICACIÓN
-// ============================================================
-const POLL_INTERVAL = 10000; // 10 segundos
-let lastAlertCheck = new Date().toISOString();
+// Debug inicial
+console.log('🔍 Debug inicial:');
+console.log('- CSRF Token:', getCSRFToken() ? 'Encontrado' : 'NO encontrado');
+console.log('- Alertas en página:', document.querySelectorAll('.alerta-item').length);
+console.log('- Botones de acción:', document.querySelectorAll('.action-btn').length);
 
-// Generar beep de alerta usando Web Audio API
-function playAlertBeep() {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Primer beep
-        const playTone = (startTime, freq, duration) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = freq;
-            osc.type = 'square';
-            gain.gain.value = 0.3;
-            gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
-            osc.start(startTime);
-            osc.stop(startTime + duration);
-        };
-        const now = ctx.currentTime;
-        playTone(now, 880, 0.2);        // beep alto
-        playTone(now + 0.3, 880, 0.2);  // segundo beep
-        playTone(now + 0.6, 1320, 0.4); // beep más agudo y largo
-    } catch(e) {
-        console.warn('No se pudo reproducir sonido de alerta');
-    }
-}
+// ─── Polling de alertas nuevas con sonido ───────────────────────────
 
-// Mostrar banner de notificación
-function showAlertBanner(alertas) {
-    // Remover banner anterior si existe
-    const prev = document.getElementById('new-alert-banner');
-    if (prev) prev.remove();
+let lastPollTime = new Date().toISOString();
+let audioCtx = null;
 
-    const count = alertas.length;
-    const primera = alertas[0];
-    const banner = document.createElement('div');
-    banner.id = 'new-alert-banner';
-    banner.style.cssText = `
-        position: fixed; top: 20px; right: 20px; z-index: 99999;
-        background: linear-gradient(135deg, #e74c3c, #c0392b);
-        color: white; padding: 16px 24px; border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(231,76,60,0.4);
-        max-width: 400px; animation: slideIn 0.5s ease-out;
-        cursor: pointer; font-family: sans-serif;
-    `;
-    banner.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <i class="fas fa-exclamation-triangle" style="font-size: 24px;"></i>
-            <div>
-                <div style="font-weight: bold; font-size: 16px;">
-                    ${count === 1 ? 'Nueva Alerta: ' + primera.tipo : count + ' Alertas Nuevas'}
-                </div>
-                <div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">
-                    ${count === 1 ? primera.descripcion.substring(0, 80) : alertas.map(a => a.tipo).join(', ')}
-                </div>
-                <div style="font-size: 11px; opacity: 0.7; margin-top: 4px;">
-                    ${count === 1 ? 'Enviada por: ' + primera.enviado_por : ''}
-                </div>
-            </div>
-            <button onclick="this.parentElement.parentElement.remove()"
-                    style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; margin-left: auto;">
-                &times;
-            </button>
-        </div>
-    `;
-    banner.onclick = function(e) {
-        if (e.target.tagName !== 'BUTTON') {
-            location.reload(); // Recargar para ver las nuevas alertas
-        }
-    };
-    document.body.appendChild(banner);
-
-    // Agregar animación CSS si no existe
-    if (!document.getElementById('alert-banner-style')) {
-        const style = document.createElement('style');
-        style.id = 'alert-banner-style';
-        style.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    // Auto-remover después de 15 segundos
-    setTimeout(() => {
-        if (banner.parentElement) {
-            banner.style.transition = 'opacity 0.5s, transform 0.5s';
-            banner.style.opacity = '0';
-            banner.style.transform = 'translateX(100%)';
-            setTimeout(() => banner.remove(), 500);
-        }
-    }, 15000);
-}
-
-// Polling principal
-function pollNuevasAlertas() {
-    fetch(`/alertas/web/alertas/nuevas/?since=${encodeURIComponent(lastAlertCheck)}`)
-        .then(r => {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.json();
-        })
-        .then(data => {
-            if (data && data.length > 0) {
-                // Actualizar timestamp
-                lastAlertCheck = data[0].fecha || new Date().toISOString();
-                // Sonar y mostrar banner
-                playAlertBeep();
-                showAlertBanner(data);
-            }
-        })
-        .catch(() => {
-            // Silenciar errores de polling
-        });
-}
-
-// Iniciar polling
-setInterval(pollNuevasAlertas, POLL_INTERVAL);
-
-// Habilitar AudioContext al primer clic (necesario en navegadores modernos)
+// Habilitar AudioContext con primer clic del usuario
 document.addEventListener('click', function enableAudio() {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        ctx.resume();
-        ctx.close();
-    } catch(e) {}
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
     document.removeEventListener('click', enableAudio);
 }, { once: true });
+
+function playAlertBeep() {
+    try {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        // Doble beep de alerta
+        [0, 0.25].forEach(delay => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+            gain.gain.value = 0.3;
+            osc.start(audioCtx.currentTime + delay);
+            osc.stop(audioCtx.currentTime + delay + 0.15);
+        });
+    } catch (e) {
+        console.warn('No se pudo reproducir sonido:', e);
+    }
+}
+
+function showAlertBanner(alertas) {
+    const container = document.getElementById('messages-container');
+    if (!container) return;
+
+    const count = alertas.length;
+    const tipos = alertas.map(a => a.tipo).join(', ');
+    const banner = document.createElement('div');
+    banner.className = 'success-message';
+    banner.style.background = '#fff3cd';
+    banner.style.color = '#856404';
+    banner.style.borderColor = '#ffc107';
+    banner.innerHTML = `
+        <strong>🔔 ${count} nueva${count > 1 ? 's' : ''} alerta${count > 1 ? 's' : ''}</strong>: ${tipos}
+        <a href="javascript:location.reload()" style="margin-left:12px;font-weight:bold;">Recargar</a>
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;font-size:16px;cursor:pointer;">&times;</button>
+    `;
+    container.prepend(banner);
+}
+
+function pollNuevasAlertas() {
+    fetch(`/alertas/web/alertas/nuevas/?since=${encodeURIComponent(lastPollTime)}`)
+        .then(r => r.ok ? r.json() : [])
+        .then(data => {
+            if (data.length > 0) {
+                playAlertBeep();
+                showAlertBanner(data);
+                lastPollTime = new Date().toISOString();
+            }
+        })
+        .catch(() => {});
+}
+
+// Polling cada 10 segundos
+setInterval(pollNuevasAlertas, 10000);
 </script>
 {% endblock %}
