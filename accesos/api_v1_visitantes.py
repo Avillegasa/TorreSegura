@@ -105,7 +105,7 @@ class VisitanteViewSet(viewsets.ModelViewSet):
                 {"mensaje": "No tienes permisos para eliminar esta invitacion."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
+        # la siguiente validación es para evitar que un residente elimine invitaciones de otra vivienda, incluso si no son escaneadas (pendientes)
         if self._es_residente():
             vivienda_id = getattr(request.user.residente, "vivienda_id", None)
             if visita.vivienda_destino_id != vivienda_id:
@@ -116,7 +116,7 @@ class VisitanteViewSet(viewsets.ModelViewSet):
 
         if visita.qr_usado:
             return Response(
-                {"mensaje": "No se puede eliminar una invitacion ya escaneada."},
+                {"mensaje": "No se puede eliminar una invitacion ya escaneada."},   
                 status=status.HTTP_409_CONFLICT,
             )
 

@@ -5,7 +5,9 @@
 ![PostgreSQL](https://img.shields.io/badge/postgresql-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Bootstrap](https://img.shields.io/badge/bootstrap-%23563D7C.svg?style=for-the-badge&logo=bootstrap&logoColor=white)
 
-Sistema web Django para la administracion integral de condominios verticales. Incluye gestion de residentes, control de accesos, modulo financiero completo, areas comunes y reportes avanzados.
+Sistema web Django para la administracion integral de condominios verticales. Incluye gestion de residentes, control de accesos, modulo financiero completo (con pagos QR vía BNB), areas comunes y reportes avanzados.
+
+Este repositorio es la API + aplicacion web Django. La app movil (React Native/Expo) que consume `/api/v1/` vive en un repositorio separado — ver su `README.md`/`CLAUDE.md` para esa parte.
 
 ---
 
@@ -17,6 +19,7 @@ Sistema web Django para la administracion integral de condominios verticales. In
 | Auth web | Django AllAuth (Google OAuth) |
 | Auth API movil | SimpleJWT |
 | Base de datos | PostgreSQL (produccion) / SQLite (desarrollo) |
+| Pagos QR | Integracion con API QR Simple de BNB (Banco Nacional de Bolivia) |
 | PDF | WeasyPrint + ReportLab |
 | Excel | Pandas + openpyxl |
 | Graficos | Matplotlib (backend) + Chart.js (frontend) |
@@ -35,8 +38,8 @@ Sistema web Django para la administracion integral de condominios verticales. In
 ### 1. Clonar y entrar al proyecto
 
 ```bash
-git clone https://github.com/Avillegasa/pilinmaster.git
-cd pilinmaster
+git clone https://github.com/Avillegasa/TorreSegura.git
+cd TorreSegura
 ```
 
 ### 2. Crear y activar entorno virtual
@@ -71,7 +74,7 @@ DEBUG=True
 USE_LOCAL_DB=True
 ```
 
-> Con `USE_LOCAL_DB=True` se usa SQLite local. Sin esa variable se intenta conectar a PostgreSQL via `DATABASE_URL`.
+> Con `USE_LOCAL_DB=True` se usa SQLite local. Sin esa variable (o en `False`) se intenta conectar a PostgreSQL via `DATABASE_URL`, y Django falla al arrancar si esta no esta configurada.
 
 ### 5. Aplicar migraciones y cargar datos de prueba
 
@@ -79,6 +82,10 @@ USE_LOCAL_DB=True
 python manage.py migrate
 python scripts/setup.py
 ```
+
+`scripts/setup.py` crea roles base, un edificio de ejemplo con viviendas, el superusuario `admin`, un usuario `vigilante` y 5 residentes de prueba (ver tabla abajo). Es idempotente: se puede volver a correr sin duplicar datos.
+
+Alternativa: `python manage.py setup_local_dev [--create-superuser]` configura el `Site` de Django (necesario para AllAuth) apuntando a `127.0.0.1:8000` y opcionalmente crea un superusuario.
 
 ### 6. Levantar el servidor
 
@@ -110,26 +117,30 @@ El script `setup.py` crea estos usuarios (patron de contrasena: `{username}123`)
 
 Panel admin Django: http://localhost:8000/admin/ (usuario `admin`)
 
+Los roles **Vigilante**, **Residente** y **Personal** solo tienen acceso a la app movil, no a la web (ver tabla de Roles y permisos).
+
 ---
 
 ## Arquitectura
 
-### Aplicaciones Django (7 apps)
+### Aplicaciones Django (8 apps)
 
 | App | Ruta web | Descripcion |
 |---|---|---|
-| `usuarios` | `/usuarios/` | Usuarios, roles, autenticacion, OAuth Google |
+| `usuarios` | `/usuarios/` | Usuarios, roles, autenticacion, OAuth Google, credenciales temporales |
 | `viviendas` | `/viviendas/` | Edificios, departamentos, residentes |
 | `accesos` | `/accesos/` | Visitas, movimientos, QR firmados |
 | `personal` | `/personal/` | Empleados, puestos, departamentos |
-| `financiero` | `/financiero/` | Cuotas, pagos, gastos, estados de cuenta |
+| `financiero` | `/financiero/` | Cuentas bancarias BNB, cuotas, pagos (incl. QR), gastos, estados de cuenta |
 | `areas_comunes` | `/areas-comunes/` | Areas comunes, reservas |
 | `reportes` | `/reportes/` | Reportes multi-formato con graficos |
 | `alertas` | `/alertas/` | Alertas de emergencia |
 
+La mayoria de estas apps tienen **dos capas de vistas** que hay que mantener sincronizadas al cambiar reglas de negocio: vistas web con templates Django (`views.py`, `forms.py`) para Administrador/Gerente, y endpoints DRF para la app movil (`api.py` y/o `api_v1_urls.py` + `serializers.py`). En `accesos`, el CRUD de visitantes vive aparte en `api_v1_visitantes.py` (router DRF).
+
 ### API Movil (`/api/v1/`)
 
-Endpoints JWT para la app React Native:
+Endpoints JWT para la app React Native, enrutados desde `condominio_app/api_v1_urls.py`:
 
 | Ruta | Descripcion |
 |---|---|
@@ -138,7 +149,9 @@ Endpoints JWT para la app React Native:
 | `/api/v1/accesos/` | Control de accesos |
 | `/api/v1/visitantes/` | CRUD visitantes (DRF router) |
 | `/api/v1/areas-comunes/` | Areas comunes y reservas |
-| `/api/v1/financiero/` | Cuotas pendientes/pagadas, registrar pagos |
+| `/api/v1/financiero/` | Cuotas pendientes/pagadas, registrar pagos, generar/consultar QR BNB |
+
+QR de acceso de visitantes: firmados con `QR_SECRET_KEY` (fallback a `SECRET_KEY`), logica en `accesos/qr_firma_utils.py`. QR de pago financiero: generado vía la API BNB (ver seccion Modulo Financiero).
 
 ### Roles y permisos
 
@@ -149,6 +162,12 @@ Endpoints JWT para la app React Native:
 | Residente | Limitado | Si | Su vivienda |
 | Vigilante | No | Si | Control de accesos |
 | Personal | No | No | Gestion interna |
+
+Las vistas web de Reportes, Financiero (pagos/estados de cuenta) y el cambio de estado de Alertas estan restringidas a **Administrador** y **Gerente** unicamente (ver `CHANGELOG_SEGURIDAD.md` para el detalle de esta correccion).
+
+### Alta de usuarios y credenciales temporales
+
+El Gerente puede crear usuarios con rol Residente, Vigilante o Personal desde la web (`usuarios/views.py`). Al crear un usuario **Personal**, el sistema genera credenciales reales de acceso movil (username auto-generado si se deja vacio, password real, `EmailAddress` verificado via AllAuth) y las muestra **una sola vez** en `usuario_credenciales.html` para que el Gerente las imprima o anote. `Usuario.debe_cambiar_password` y `Usuario.credenciales_expiran` controlan si esas credenciales son temporales; `ForcePasswordChangeMiddleware` (`condominio_app/middleware/force_password_change.py`) fuerza el cambio de contrasena o desactiva la cuenta si expiraron, redirigiendo a `forzar_cambio_password` en cualquier vista salvo esa y logout. Ver `CHANGELOG_USUARIOS.md` para el detalle completo del flujo.
 
 ---
 
@@ -161,9 +180,10 @@ El modulo mas completo del sistema. Ruta base: `/financiero/`
 | Submodulo | URL | Funcionalidad |
 |---|---|---|
 | Dashboard | `/financiero/` | Resumen con graficos Chart.js, filtros por edificio/vivienda |
+| Cuentas Bancarias | `/financiero/cuentas-bancarias/` | Cuenta BNB por edificio, credenciales API QR Simple (solo Admin) |
 | Conceptos de Cuota | `/financiero/conceptos/` | Tipos de cuota (mantenimiento, extraordinaria, etc.) |
 | Cuotas | `/financiero/cuotas/` | CRUD + generacion masiva por edificio |
-| Pagos | `/financiero/pagos/` | Registro, verificacion, rechazo |
+| Pagos | `/financiero/pagos/` | Registro, verificacion, rechazo (efectivo, transferencia o QR BNB) |
 | Categorias de Gasto | `/financiero/categorias-gasto/` | Categorias con presupuesto mensual |
 | Gastos | `/financiero/gastos/` | CRUD + marcar pagado / cancelar |
 | Estados de Cuenta | `/financiero/estados-cuenta/` | Generacion individual/masiva, PDF, envio por email |
@@ -171,10 +191,16 @@ El modulo mas completo del sistema. Ruta base: `/financiero/`
 ### Flujo principal: Cuota -> Pago -> Verificacion
 
 1. Se genera una **cuota** (individual o masiva por edificio)
-2. El residente o admin registra un **pago** (estado PENDIENTE)
+2. El residente o admin registra un **pago** (estado PENDIENTE) — a mano o pagando el QR BNB generado para la cuota
 3. Se vincula el pago con cuotas via **PagoCuota**
-4. Un admin/gerente **verifica** el pago -> las cuotas se marcan como pagadas automaticamente
+4. Un admin/gerente **verifica** el pago -> las cuotas se marcan como pagadas automaticamente (o el pago QR se concilia automaticamente al confirmar BNB el cobro)
 5. Si se **rechaza**, las cuotas vuelven a estado pendiente
+
+La logica de recargos por mora, auto-asignacion de pagos a cuotas y actualizacion de fechas vive en signals (`financiero/signals.py`), no en las vistas — es el punto correcto para modificar estas reglas.
+
+### Pagos QR (BNB)
+
+`financiero/services/bnb_payment.py` integra la **API QR Simple de BNB**: autentica con `BNB_ACCOUNT_ID`/`BNB_AUTHORIZATION_ID` (por edificio, guardados en el modelo de Cuenta Bancaria), genera un QR de cobro para una cuota y consulta su estado (no usado / pagado / expirado / error). Usa `BNB_SANDBOX=True` por defecto para el entorno sandbox de BNB. Endpoints relevantes: `financiero/api.py::generar_qr_pago` y `financiero/api_v1_urls.py` (`/api/v1/financiero/pagos/qr/generar/`).
 
 ### APIs del dashboard
 
@@ -188,9 +214,10 @@ El modulo mas completo del sistema. Ruta base: `/financiero/`
 
 ```bash
 # Tests
-python manage.py test                      # Todos
-python manage.py test financiero           # Solo financiero
-python manage.py test financiero -v2       # Con detalle
+python manage.py test                                  # Todos
+python manage.py test financiero                       # Solo financiero
+python manage.py test financiero.tests.ClaseTest.test_metodo  # Un test puntual
+python manage.py test financiero -v2                    # Con detalle
 
 # Migraciones
 python manage.py makemigrations
@@ -198,8 +225,10 @@ python manage.py migrate
 python manage.py showmigrations
 
 # Datos
-python scripts/setup.py                    # Seed inicial
-python manage.py createsuperuser           # Superusuario manual
+python scripts/setup.py                    # Seed inicial (roles, edificio, usuarios de prueba)
+python manage.py setup_local_dev            # Configura el Site de AllAuth para desarrollo local
+python manage.py seed_cuotas                # Genera cuotas de prueba (financiero)
+python manage.py createsuperuser            # Superusuario manual
 
 # Produccion
 python manage.py collectstatic --noinput
@@ -217,10 +246,20 @@ gunicorn condominio_app.wsgi:application --bind 0.0.0.0:8000
 | `USE_LOCAL_DB` | No | `False` | `True` = SQLite, `False` = PostgreSQL |
 | `DATABASE_URL` | Prod | - | URL de PostgreSQL |
 | `QR_SECRET_KEY` | No | `SECRET_KEY` | Clave para firmar QR de visitantes |
+| `EMAIL_BACKEND` | No | consola en `DEBUG` | Backend de email; en dev se recomienda dejarlo sin definir (consola) |
+| `EMAIL_HOST` | No | - | Host SMTP (ej. `smtp.gmail.com`) |
+| `EMAIL_PORT` | No | - | Puerto SMTP (ej. `587`) |
+| `EMAIL_USE_TLS` | No | - | `True` para TLS |
 | `EMAIL_HOST_USER` | No | - | Email SMTP para notificaciones |
 | `EMAIL_HOST_PASSWORD` | No | - | Password SMTP |
+| `DEFAULT_FROM_EMAIL` | No | - | Remitente por defecto de los correos del sistema |
 | `GOOGLE_CLIENT_ID` | No | - | OAuth Google |
 | `GOOGLE_SECRET` | No | - | OAuth Google |
+| `BNB_SANDBOX` | No | `True` | `False` para usar la API BNB de produccion |
+| `BNB_ACCOUNT_ID` | No | - | accountId de la API QR Simple de BNB (fallback global; normalmente se guarda por edificio) |
+| `BNB_AUTHORIZATION_ID` | No | - | authorizationId de la API QR Simple de BNB |
+
+`ALLOWED_HOSTS` no se define por `.env` directamente: en `DEBUG=True` incluye automaticamente `*` (para pruebas por LAN con la app movil), y en Railway agrega `RAILWAY_PUBLIC_DOMAIN`.
 
 ---
 
@@ -231,26 +270,30 @@ TorreSegura/
 ├── condominio_app/          # Configuracion Django (settings, urls, wsgi)
 │   ├── settings.py
 │   ├── urls.py
-│   └── api_v1_urls.py       # Rutas API movil
-├── usuarios/                # Usuarios, roles, auth
-├── viviendas/               # Edificios, viviendas, residentes
-├── accesos/                 # Visitas, movimientos, QR
-├── personal/                # Empleados, puestos
-├── financiero/              # Cuotas, pagos, gastos, estados de cuenta
-│   ├── models.py            # 7 modelos (ConceptoCuota, Cuota, Pago, etc.)
-│   ├── views.py             # ~1900 LOC, dashboard + CRUD + acciones
-│   ├── signals.py           # Auto-asignacion de pagos, recargos, etc.
-│   ├── api.py               # Endpoints API movil
-│   └── forms.py             # Formularios con validacion
-├── areas_comunes/           # Areas comunes, reservas
-├── reportes/                # Reportes multi-formato
-├── alertas/                 # Alertas de emergencia
-├── templates/               # Templates Django (por app)
-├── static/                  # CSS, JS, imagenes
-├── media/                   # Archivos subidos (comprobantes, PDFs)
-├── scripts/setup.py         # Seed de datos iniciales
-├── requirements.txt         # Dependencias Python
-├── .env.example             # Plantilla de variables de entorno
+│   ├── api_v1_urls.py       # Rutas API movil
+│   └── middleware/
+│       └── force_password_change.py
+├── usuarios/                 # Usuarios, roles, auth, credenciales temporales
+├── viviendas/                 # Edificios, viviendas, residentes
+├── accesos/                   # Visitas, movimientos, QR de acceso
+├── personal/                  # Empleados, puestos
+├── financiero/                 # Cuentas BNB, cuotas, pagos (QR), gastos, estados de cuenta
+│   ├── models.py             # ConceptoCuota, Cuota, Pago, PagoCuota, Gasto, CuentaBancaria, PagoQRBNB, etc.
+│   ├── views.py               # Dashboard + CRUD + acciones (vistas web)
+│   ├── api.py / api_v1_urls.py # Endpoints API movil, incl. generacion/consulta de QR BNB
+│   ├── services/bnb_payment.py # Cliente de la API QR Simple de BNB
+│   ├── signals.py             # Auto-asignacion de pagos, recargos por mora, etc.
+│   └── management/commands/seed_cuotas.py
+├── areas_comunes/              # Areas comunes, reservas
+├── reportes/                    # Reportes multi-formato
+├── alertas/                     # Alertas de emergencia
+├── templates/                   # Templates Django (por app)
+├── static/                      # CSS, JS, imagenes
+├── media/                       # Archivos subidos (comprobantes, PDFs)
+├── scripts/setup.py             # Seed de datos iniciales
+├── requirements.txt             # Dependencias Python
+├── .env.example                 # Plantilla de variables de entorno
+├── CLAUDE.md                    # Guia para Claude Code sobre este backend
 └── manage.py
 ```
 
@@ -265,6 +308,7 @@ El proyecto esta desplegado en Railway con PostgreSQL. Las variables de entorno 
 - HSTS habilitado (1 ano)
 - Cookies seguras
 - CORS restringido a dominios especificos
+Sobre este punto de desplieque ya paso mucho tiempo y posiblemente no este funcionando. pero esta documentado por si se requeire mas adelante
 
 ---
 
